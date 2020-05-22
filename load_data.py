@@ -5,9 +5,20 @@ from keras.utils import Sequence
 #from skimage.io import imread
 
 
-def load_data(nr_of_channels, batch_size=1, nr_A_train_imgs=None, nr_B_train_imgs=None,
-              nr_A_test_imgs=None, nr_B_test_imgs=None, subfolder='',
-              generator=False, D_model=None, use_multiscale_discriminator=False, use_supervised_learning=False, REAL_LABEL=1.0):
+def load_data(
+    num_channels=3,
+    batch_size=1,
+    nr_A_train_imgs=None,
+    nr_B_train_imgs=None,
+    nr_A_test_imgs=None,
+    nr_B_test_imgs=None,
+    subfolder='',
+    generator=True,
+    D_model=None,
+    use_multiscale_discriminator=False,
+    use_supervised_learning=False,
+    REAL_LABEL=1.0
+):
 
     trainA_path = os.path.join('data', subfolder, 'trainA')
     trainB_path = os.path.join('data', subfolder, 'trainB')
@@ -33,10 +44,10 @@ def load_data(nr_of_channels, batch_size=1, nr_A_train_imgs=None, nr_B_train_img
     if generator:
         return data_sequence(trainA_path, trainB_path, trainA_image_names, trainB_image_names, batch_size=batch_size)  # D_model, use_multiscale_discriminator, use_supervised_learning, REAL_LABEL)
     else:
-        trainA_images = create_image_array(trainA_image_names, trainA_path, nr_of_channels)
-        trainB_images = create_image_array(trainB_image_names, trainB_path, nr_of_channels)
-        testA_images = create_image_array(testA_image_names, testA_path, nr_of_channels)
-        testB_images = create_image_array(testB_image_names, testB_path, nr_of_channels)
+        trainA_images = create_image_array(trainA_image_names, trainA_path, num_channels)
+        trainB_images = create_image_array(trainB_image_names, trainB_path, num_channels)
+        testA_images = create_image_array(testA_image_names, testA_path, num_channels)
+        testB_images = create_image_array(testB_image_names, testB_path, num_channels)
         return {"trainA_images": trainA_images, "trainB_images": trainB_images,
                 "testA_images": testA_images, "testB_images": testB_images,
                 "trainA_image_names": trainA_image_names,
@@ -45,17 +56,18 @@ def load_data(nr_of_channels, batch_size=1, nr_A_train_imgs=None, nr_B_train_img
                 "testB_image_names": testB_image_names}
 
 
-def create_image_array(image_list, image_path, nr_of_channels):
+def create_image_array(image_list, image_path, num_channels):
     image_array = []
     for image_name in image_list:
         if image_name[-1].lower() == 'g':  # to avoid e.g. thumbs.db files
-            if nr_of_channels == 1:  # Gray scale image -> MR image
+            if num_channels == 1:  # Gray scale image -> MR image
                 image = np.array(Image.open(os.path.join(image_path, image_name)))
                 image = image[:, :, np.newaxis]
             else:                   # RGB image -> street view
                 image = np.array(Image.open(os.path.join(image_path, image_name)))
             image = normalize_array(image)
-            image_array.append(image)
+            if image.shape[-1] == num_channels:
+                image_array.append(image)
 
     return np.array(image_array)
 
@@ -67,7 +79,7 @@ def normalize_array(array):
 
 class data_sequence(Sequence):
 
-    def __init__(self, trainA_path, trainB_path, image_list_A, image_list_B, batch_size=1):  # , D_model, use_multiscale_discriminator, use_supervised_learning, REAL_LABEL):
+    def __init__(self, trainA_path, trainB_path, image_list_A, image_list_B, batch_size=1, num_channels=3):  # , D_model, use_multiscale_discriminator, use_supervised_learning, REAL_LABEL):
         self.batch_size = batch_size
         self.train_A = []
         self.train_B = []
@@ -82,6 +94,8 @@ class data_sequence(Sequence):
         return int(max(len(self.train_A), len(self.train_B)) / float(self.batch_size))
 
     def __getitem__(self, idx):  # , use_multiscale_discriminator, use_supervised_learning):if loop_index + batch_size >= min_nr_imgs:
+        print(idx)
+        assert type(idx) != str
         if idx >= min(len(self.train_A), len(self.train_B)):
             # If all images soon are used for one domain,
             # randomly pick from this domain
@@ -108,4 +122,4 @@ class data_sequence(Sequence):
 
 
 if __name__ == '__main__':
-    load_data()
+    data = load_data()

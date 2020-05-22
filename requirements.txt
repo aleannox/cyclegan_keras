@@ -1,0 +1,5 @@
+matplotlib==3.2.1
+numpy==1.18.4
+Pillow==7.1.2
+tensorflow-gpu==2.2.0
+tensorflow-addons==0.10.0

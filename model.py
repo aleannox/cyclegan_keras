@@ -1,15 +1,15 @@
-from keras.layers import Layer, Input, Conv2D, Activation, add, BatchNormalization, UpSampling2D, ZeroPadding2D, Conv2DTranspose, Flatten, MaxPooling2D, AveragePooling2D
-from keras_contrib.layers.normalization import InstanceNormalization, InputSpec
-from keras.layers.advanced_activations import LeakyReLU
-from keras.layers.core import Dense
-from keras.optimizers import Adam
-from keras.backend import mean
-from keras.models import Model, model_from_json
-from keras.utils import plot_model
-from keras.engine.topology import Network
+from tensorflow.keras.layers import Layer, Input, Conv2D, Activation, add, BatchNormalization, UpSampling2D, ZeroPadding2D, Conv2DTranspose, Flatten, MaxPooling2D, AveragePooling2D
+from tensorflow_addons.layers import InstanceNormalization
+from tensorflow.keras.layers import InputSpec
+from tensorflow.keras.layers import LeakyReLU
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.backend import mean
+from tensorflow.keras.models import Model, model_from_json
+from tensorflow.keras.utils import plot_model
 
+import PIL.Image
 from collections import OrderedDict
-from scipy.misc import imsave, toimage  # has depricated
 import numpy as np
 import random
 import datetime
@@ -20,7 +20,7 @@ import csv
 import sys
 import os
 
-import keras.backend as K
+import tensorflow.keras.backend as K
 import tensorflow as tf
 
 # sys.path.append('../')
@@ -30,8 +30,14 @@ np.random.seed(seed=12345)
 
 
 class CycleGAN():
-    def __init__(self, lr_D=2e-4, lr_G=2e-4, image_shape=(256*1, 256*1, 1),
-                 date_time_string_addition='_test', image_folder=''):
+    def __init__(
+        self,
+        lr_D=2e-4, lr_G=2e-4,
+        image_shape=(256, 256, 3),
+        date_time_string_addition='_test',
+        use_data_generator=False,
+        image_folder=''
+    ):
         self.img_shape = image_shape
         self.channels = self.img_shape[-1]
         self.normalization = InstanceNormalization
@@ -72,7 +78,7 @@ class CycleGAN():
         self.supervised_weight = 10.0
 
         # Fetch data during training instead of pre caching all images - might be necessary for large datasets
-        self.use_data_generator = False
+        self.use_data_generator = use_data_generator
 
         # Tweaks
         self.REAL_LABEL = 1.0  # Use e.g. 0.9 to avoid training the discriminators to zero loss
@@ -112,9 +118,8 @@ class CycleGAN():
                          loss=self.lse,
                          loss_weights=loss_weights_D)
 
-        # Use Networks to avoid falsy keras error about weight descripancies
-        self.D_A_static = Network(inputs=image_A, outputs=guess_A, name='D_A_static_model')
-        self.D_B_static = Network(inputs=image_B, outputs=guess_B, name='D_B_static_model')
+        self.D_A_static = Model(inputs=image_A, outputs=guess_A, name='D_A_static_model')
+        self.D_B_static = Model(inputs=image_B, outputs=guess_B, name='D_B_static_model')
 
         # ======= Generator model ==========
         # Do note update discriminator weights during generator training
@@ -189,19 +194,23 @@ class CycleGAN():
 
         if self.use_data_generator:            
             self.data_generator = load_data.load_data(
-                nr_of_channels=self.channels, batch_size=self.batch_size, generator=True, subfolder=image_folder)
+                num_channels=self.channels, batch_size=self.batch_size, generator=True, subfolder=image_folder)
 
             # Only store test images
             nr_A_train_imgs = 0
             nr_B_train_imgs = 0
+        
 
-        data = load_data.load_data(nr_of_channels=self.channels,
-                                   batch_size=self.batch_size,
-                                   nr_A_train_imgs=nr_A_train_imgs,
-                                   nr_B_train_imgs=nr_B_train_imgs,
-                                   nr_A_test_imgs=nr_A_test_imgs,
-                                   nr_B_test_imgs=nr_B_test_imgs,
-                                   subfolder=image_folder)
+        data = load_data.load_data(
+            num_channels=self.channels,
+            batch_size=self.batch_size,
+            nr_A_train_imgs=nr_A_train_imgs,
+            nr_B_train_imgs=nr_B_train_imgs,
+            nr_A_test_imgs=nr_A_test_imgs,
+            nr_B_test_imgs=nr_B_test_imgs,
+            subfolder=image_folder,
+            generator=False
+        )
 
         self.A_train = data["trainA_images"]
         self.B_train = data["trainB_images"]
@@ -220,13 +229,13 @@ class CycleGAN():
 
         # ======= Avoid pre-allocating GPU memory ==========
         # TensorFlow wizardry
-        config = tf.ConfigProto()
+        config = tf.compat.v1.ConfigProto()
 
         # Don't pre-allocate memory; allocate as-needed
         config.gpu_options.allow_growth = True
 
         # Create a session with the above options specified.
-        K.tensorflow_backend.set_session(tf.Session(config=config))
+        tf.compat.v1.keras.backend.set_session(tf.compat.v1.Session(config=config))
 
         # ===== Tests ======
         # Simple Model
@@ -393,9 +402,10 @@ class CycleGAN():
 #===============================================================================
 # Training
     def train(self, epochs, batch_size=1, save_interval=1):
+        #tf.compat.v1.global_variables_initializer()
         def run_training_iteration(loop_index, epoch_iterations):
             # ======= Discriminator training ==========
-                # Generate batch of synthetic images
+            # Generate batch of synthetic images
             synthetic_images_B = self.G_A2B.predict(real_images_A)
             synthetic_images_A = self.G_B2A.predict(real_images_B)
             synthetic_images_A = synthetic_pool_A.query(synthetic_images_A)
@@ -649,7 +659,7 @@ class CycleGAN():
 # Help functions
 
     def lse(self, y_true, y_pred):
-        loss = tf.reduce_mean(tf.squared_difference(y_pred, y_true))
+        loss = tf.reduce_mean(tf.math.squared_difference(y_pred, y_true))
         return loss
 
     def cycle_loss(self, y_true, y_pred):
@@ -673,7 +683,9 @@ class CycleGAN():
         if self.channels == 1:
             image = image[:, :, 0]
 
-        toimage(image, cmin=-1, cmax=1).save(path_name)
+        PIL.Image.fromarray(
+            (image * 128 + 128).astype('uint8')
+        ).save(path_name)
 
     def saveImages(self, epoch, real_image_A, real_image_B, num_saved_images=1):
         directory = os.path.join('images', self.date_time)
@@ -882,6 +894,10 @@ class ReflectionPadding2D(Layer):
         w_pad, h_pad = self.padding
         return tf.pad(x, [[0, 0], [h_pad, h_pad], [w_pad, w_pad], [0, 0]], 'REFLECT')
 
+    def get_config(self):
+        config = super(ReflectionPadding2D, self).get_config()
+        return config
+
 
 class ImagePool():
     def __init__(self, pool_size):
@@ -931,4 +947,8 @@ class ImagePool():
 
 
 if __name__ == '__main__':
-    GAN = CycleGAN()
+    GAN = CycleGAN(
+        #image_shape=(640, 360, 3),
+        image_shape=(256, 256, 3),
+        use_data_generator=False
+    )
