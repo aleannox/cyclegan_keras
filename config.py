@@ -9,7 +9,8 @@ import dacite
 CONFIG_CONVERTERS = {
     pathlib.Path: pathlib.Path,
     tuple: tuple,
-    bool: bool
+    bool: bool,
+    int: int
 }
 
 
@@ -67,6 +68,7 @@ class TrainConfig:
     source_images: pathlib.Path
     image_shape: tuple
     use_data_generator: bool
+    batch_size: int
 
 
 def train_config_from_json(config_path):

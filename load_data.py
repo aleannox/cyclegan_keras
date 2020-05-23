@@ -1,5 +1,3 @@
-import os
-
 import numpy as np
 from PIL import Image
 from tensorflow.keras.utils import Sequence
@@ -15,46 +13,64 @@ def load_data(
     nr_B_train_imgs=None,
     nr_A_test_imgs=None,
     nr_B_test_imgs=None,
-    generator=True
+    return_generator=True
 ):
     train_A_path = config.STATIC_PATHS.source_images / source_images / 'train_A'
     train_B_path = config.STATIC_PATHS.source_images / source_images / 'train_B'
     test_A_path = config.STATIC_PATHS.source_images / source_images / 'test_A'
     test_B_path = config.STATIC_PATHS.source_images / source_images / 'test_B'
 
-    train_A_image_names = list(train_A_path.iterdir())
+    train_A_image_names = sorted(train_A_path.iterdir())
     if nr_A_train_imgs is not None:
         train_A_image_names = train_A_image_names[:nr_A_train_imgs]
 
-    train_B_image_names = list(train_B_path.iterdir())
+    train_B_image_names = sorted(train_B_path.iterdir())
     if nr_B_train_imgs is not None:
         train_B_image_names = train_B_image_names[:nr_B_train_imgs]
 
-    test_A_image_names = list(test_A_path.iterdir())
+    test_A_image_names = sorted(test_A_path.iterdir())
     if nr_A_test_imgs is not None:
         test_A_image_names = test_A_image_names[:nr_A_test_imgs]
 
-    test_B_image_names = list(test_B_path.iterdir())
+    test_B_image_names = sorted(test_B_path.iterdir())
     if nr_B_test_imgs is not None:
         test_B_image_names = test_B_image_names[:nr_B_test_imgs]
 
-    if generator:
-        return data_sequence(train_A_path, train_B_path, train_A_image_names, train_B_image_names, batch_size=batch_size)  # D_model, use_multiscale_discriminator, use_supervised_learning, REAL_LABEL)
+    if return_generator:
+        train_AB_images_generator = data_sequence(
+            train_A_image_names,
+            train_B_image_names,
+            batch_size=batch_size
+        )
+        test_AB_images_generator = data_sequence(
+            test_A_image_names,
+            test_B_image_names,
+            batch_size=batch_size
+        )
+        train_A_images = None
+        train_B_images = None
+        test_A_images = None
+        test_B_images = None
     else:
+        train_AB_images_generator = None
+        test_AB_images_generator = None
         train_A_images = create_image_array(train_A_image_names, num_channels)
         train_B_images = create_image_array(train_B_image_names, num_channels)
         test_A_images = create_image_array(test_A_image_names, num_channels)
         test_B_images = create_image_array(test_B_image_names, num_channels)
-        return {
-            "train_A_images": train_A_images,
-            "train_B_images": train_B_images,
-            "test_A_images": test_A_images,
-            "test_B_images": test_B_images,
-            "train_A_image_names": train_A_image_names,
-            "train_B_image_names": train_B_image_names,
-            "test_A_image_names": test_A_image_names,
-            "test_B_image_names": test_B_image_names
-        }
+
+    return {
+        "train_A_images": train_A_images,
+        "train_B_images": train_B_images,
+        "test_A_images": test_A_images,
+        "test_B_images": test_B_images,
+        "train_A_image_names": train_A_image_names,
+        "train_B_image_names": train_B_image_names,
+        "test_A_image_names": test_A_image_names,
+        "test_B_image_names": test_B_image_names,
+        "train_AB_images_generator": train_AB_images_generator,
+        "test_AB_images_generator": test_AB_images_generator
+    }
 
 
 ALLOWED_SUFFIXES = ['.jpg', '.jpeg', '.png']
@@ -75,6 +91,7 @@ def create_image_array(image_list, num_channels):
 
     return np.array(image_array)
 
+
 # If using 16 bit depth images, use the formula 'array = array / 32767.5 - 1' instead
 def normalize_array(array):
     array = array / 127.5 - 1
@@ -82,24 +99,26 @@ def normalize_array(array):
 
 
 class data_sequence(Sequence):
-
-    def __init__(self, train_A_path, train_B_path, image_list_A, image_list_B, batch_size=1):
+    def __init__(
+        self,
+        image_list_A,
+        image_list_B,
+        batch_size=1
+    ):
         self.batch_size = batch_size
         self.train_A = []
         self.train_B = []
         for image_name in image_list_A:
-            if image_name[-1].lower() == 'g':  # to avoid e.g. thumbs.db files
-                self.train_A.append(os.path.join(train_A_path, image_name))
+            if image_name.suffix.lower() in ALLOWED_SUFFIXES:
+                self.train_A.append(image_name)
         for image_name in image_list_B:
-            if image_name[-1].lower() == 'g':  # to avoid e.g. thumbs.db files
-                self.train_B.append(os.path.join(train_B_path, image_name))
+            if image_name.suffix.lower() in ALLOWED_SUFFIXES:
+                self.train_B.append(image_name)
 
     def __len__(self):
-        return int(max(len(self.train_A), len(self.train_B)) / float(self.batch_size))
+        return max(len(self.train_A), len(self.train_B)) // self.batch_size + 1
 
     def __getitem__(self, idx):
-        print(idx)
-        assert not isinstance(idx, str)
         if idx >= min(len(self.train_A), len(self.train_B)):
             # If all images soon are used for one domain,
             # randomly pick from this domain
@@ -122,4 +141,9 @@ class data_sequence(Sequence):
         real_images_A = create_image_array(batch_A, 3)
         real_images_B = create_image_array(batch_B, 3)
 
-        return real_images_A, real_images_B
+        return {
+            'real_images_A': real_images_A,
+            'real_images_B': real_images_B,
+            'real_image_paths_A': batch_A,
+            'real_image_paths_B': batch_B
+        }

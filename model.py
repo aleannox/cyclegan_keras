@@ -8,6 +8,7 @@ import os
 import random
 import sys
 import time
+import tqdm
 
 import PIL.Image
 import numpy as np
@@ -36,7 +37,8 @@ class CycleGAN():
         image_shape=(256, 256, 3),
         use_data_generator=False,
         model_key=None,
-        generate_synthetic_images=False
+        generate_synthetic_images=False,
+        batch_size=1
     ):
         self.img_shape = image_shape
         self.channels = self.img_shape[-1]
@@ -51,7 +53,7 @@ class CycleGAN():
         self.discriminator_iterations = 1  # Number of generator training iterations in each training loop
         self.beta_1 = 0.5
         self.beta_2 = 0.999
-        self.batch_size = 1
+        self.batch_size = batch_size
         self.epochs = 200  # choose multiples of 25 since the models are save each 25th epoch
         self.save_interval = 1
         self.synthetic_pool_size = 50
@@ -84,6 +86,8 @@ class CycleGAN():
         self.REAL_LABEL = 1.0  # Use e.g. 0.9 to avoid training the discriminators to zero loss
 
         self.result_paths = config.construct_result_paths(model_key)
+
+        self.source_images = source_images
 
         # optimizer
         self.opt_D = Adam(self.learning_rate_D, self.beta_1, self.beta_2)
@@ -186,22 +190,9 @@ class CycleGAN():
         nr_B_test_imgs = None
 
         if self.use_data_generator:
-            print('--- Using dataloader during training ---')
+            logging.info("Using data generator.")
         else:
-            print('--- Caching data ---')
-        sys.stdout.flush()
-
-        if self.use_data_generator:
-            self.data_generator = load_data.load_data(
-                num_channels=self.channels,
-                batch_size=self.batch_size,
-                generator=True,
-                source_images=source_images
-            )
-
-            # Only store test images
-            nr_A_train_imgs = 0
-            nr_B_train_imgs = 0
+            logging.info("Caching data in memory.")
 
         data = load_data.load_data(
             num_channels=self.channels,
@@ -211,7 +202,7 @@ class CycleGAN():
             nr_A_test_imgs=nr_A_test_imgs,
             nr_B_test_imgs=nr_B_test_imgs,
             source_images=source_images,
-            generator=False
+            return_generator=self.use_data_generator
         )
 
         self.A_train = data["train_A_images"]
@@ -220,8 +211,9 @@ class CycleGAN():
         self.B_test = data["test_B_images"]
         self.test_A_image_names = data["test_A_image_names"]
         self.test_B_image_names = data["test_B_image_names"]
-        if not self.use_data_generator:
-            print('Data has been loaded')
+        self.data_generator_train = data["train_AB_images_generator"]
+        self.data_generator_test = data["test_AB_images_generator"]
+        logging.info("Data loaded.")
 
         self.writeMetaDataToJSON()
 
@@ -518,15 +510,15 @@ class CycleGAN():
         for epoch in range(1, epochs + 1):
             if self.use_data_generator:
                 loop_index = 1
-                for images in self.data_generator:
-                    real_images_A = images[0]
-                    real_images_B = images[1]
+                for batch in self.data_generator_train:
+                    real_images_A = batch['real_images_A']
+                    real_images_B = batch['real_images_B']
                     if len(real_images_A.shape) == 3:
                         real_images_A = real_images_A[:, :, :, np.newaxis]
                         real_images_B = real_images_B[:, :, :, np.newaxis]
 
                     # Run all training steps
-                    run_training_iteration(loop_index, self.data_generator.__len__())
+                    run_training_iteration(loop_index, self.data_generator_train.__len__())
 
                     # Store models
                     if loop_index % 20000 == 0:
@@ -536,7 +528,7 @@ class CycleGAN():
                         self.saveModel(self.G_B2A, loop_index)
 
                     # Break if loop has ended
-                    if loop_index >= self.data_generator.__len__():
+                    if loop_index >= self.data_generator_train.__len__():
                         break
 
                     loop_index += 1
@@ -715,7 +707,7 @@ class CycleGAN():
     def get_lr_linear_decay_rate(self):
         # Calculate decay rates
         if self.use_data_generator:
-            max_nr_images = len(self.data_generator)
+            max_nr_images = len(self.data_generator_train)
         else:
             max_nr_images = max(len(self.A_train), len(self.B_train))
 
@@ -792,17 +784,14 @@ class CycleGAN():
             'beta 1': self.beta_1,
             'beta 2': self.beta_2,
             'REAL_LABEL': self.REAL_LABEL,
-            'number of A train examples': len(self.A_train),
-            'number of B train examples': len(self.B_train),
-            'number of A test examples': len(self.A_test),
-            'number of B test examples': len(self.B_test),
+            'source_images': str(self.source_images),
         })
 
         with (self.result_paths.base / 'meta_data.json').open('w') as outfile:
             json.dump(data, outfile, sort_keys=True)
 
     def load_weights_for_model(self, model):
-        path_to_weights = list(
+        path_to_weights = sorted(
             self.result_paths.saved_models.glob(f'{model.name}_weights_epoch_*.hdf5')
         )[-1]  # Load last available weights.
         logging.info("Loading weights from %s.", path_to_weights)
@@ -811,8 +800,6 @@ class CycleGAN():
     def load_model_and_generate_synthetic_images(self):
         self.load_weights_for_model(self.G_A2B)
         self.load_weights_for_model(self.G_B2A)
-        synthetic_images_B = self.G_A2B.predict(self.A_test)
-        synthetic_images_A = self.G_B2A.predict(self.B_test)
 
         def save_image(image, name, domain):
             if self.channels == 1:
@@ -825,29 +812,55 @@ class CycleGAN():
                 ] / name
             )
 
-        # Test A images
-        for i in range(len(synthetic_images_A)):
-            # Get the name from the image it was conditioned on
-            name = self.test_B_image_names[i].stem + '_synthetic.png'
-            synt_A = synthetic_images_A[i]
-            save_image(synt_A, name, 'A')
+        logging.info("Running prediction on test images.")
 
-        print(
-            f"{len(self.A_test)} synthetic images have been generated and "
-            f"placed in {self.result_paths.generated_synthetic_images_A}."
-        )
-
-        # Test B images
-        for i in range(len(synthetic_images_B)):
-            # Get the name from the image it was conditioned on
-            name = self.test_A_image_names[i].stem + '_synthetic.png'
-            synt_B = synthetic_images_B[i]
-            save_image(synt_B, name, 'B')
-
-        print(
-            f"{len(self.B_test)} synthetic images have been generated and "
-            f"placed in {self.result_paths.generated_synthetic_images_B}."
-        )
+        if self.use_data_generator:
+            loop_index = 1
+            for batch in tqdm.tqdm(self.data_generator_test):
+                real_images_A = batch['real_images_A']
+                real_images_B = batch['real_images_B']
+                real_image_paths_A = batch['real_image_paths_A']
+                real_image_paths_B = batch['real_image_paths_B']
+                synthetic_images_B = self.G_A2B.predict(real_images_A)
+                synthetic_images_A = self.G_B2A.predict(real_images_B)
+                for i in range(len(synthetic_images_A)):
+                    name_A = real_image_paths_B[i].stem + '_synthetic.png'
+                    synthetic_image_A = synthetic_images_A[i]
+                    save_image(synthetic_image_A, name_A, 'A')
+                for i in range(len(synthetic_images_B)):
+                    name_B = real_image_paths_A[i].stem + '_synthetic.png'
+                    synthetic_image_B = synthetic_images_B[i]
+                    save_image(synthetic_image_B, name_B, 'B')
+                if loop_index >= self.data_generator_test.__len__():
+                    break
+                loop_index += 1
+            logging.info(
+                f"{len(self.data_generator_test) * self.batch_size} synthetic images have been generated and "
+                f"placed in {self.result_paths.generated_synthetic_images_A}."
+            )
+            logging.info(
+                f"{len(self.data_generator_test) * self.batch_size} synthetic images have been generated and "
+                f"placed in {self.result_paths.generated_synthetic_images_B}."
+            )
+        else:
+            synthetic_images_B = self.G_A2B.predict(self.A_test)
+            synthetic_images_A = self.G_B2A.predict(self.B_test)
+            for i in range(len(synthetic_images_A)):
+                name_A = self.test_B_image_names[i].stem + '_synthetic.png'
+                synthetic_image_A = synthetic_images_A[i]
+                save_image(synthetic_image_A, name_A, 'A')
+            for i in range(len(synthetic_images_B)):
+                name_B = self.test_A_image_names[i].stem + '_synthetic.png'
+                synthetic_image_B = synthetic_images_B[i]
+                save_image(synthetic_image_B, name_B, 'B')
+            logging.info(
+                f"{len(self.A_test)} synthetic images have been generated and "
+                f"placed in {self.result_paths.generated_synthetic_images_A}."
+            )
+            logging.info(
+                f"{len(self.B_test)} synthetic images have been generated and "
+                f"placed in {self.result_paths.generated_synthetic_images_B}."
+            )
 
 
 # reflection padding taken from
@@ -939,7 +952,8 @@ def get_arguments():
         '--model-key', default=None,
         help=(
             f"Load model from this key relative to {config.STATIC_PATHS.results}. "
-            "If supplied, model is loaded from this key rather than trained."
+            "If supplied, model is loaded from this key rather than trained. "
+            "The chronologically last model checkpoint is loaded."
         )
     )
     parser.add_argument(
@@ -993,6 +1007,7 @@ if __name__ == '__main__':
         image_shape=config_.image_shape,
         use_data_generator=config_.use_data_generator,
         source_images=config_.source_images,
+        batch_size=config_.batch_size,
         model_key=arguments.model_key,
         generate_synthetic_images=arguments.generate_synthetic_images
     )
