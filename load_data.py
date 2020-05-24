@@ -9,10 +9,10 @@ def load_data(
     source_images,
     num_channels=3,
     batch_size=1,
-    nr_A_train_imgs=None,
-    nr_B_train_imgs=None,
-    nr_A_test_imgs=None,
-    nr_B_test_imgs=None,
+    num_train_A_images=None,
+    num_train_B_images=None,
+    num_test_A_images=None,
+    num_test_B_images=None,
     return_generator=True
 ):
     train_A_path = config.STATIC_PATHS.source_images / source_images / 'train_A'
@@ -21,20 +21,20 @@ def load_data(
     test_B_path = config.STATIC_PATHS.source_images / source_images / 'test_B'
 
     train_A_image_names = sorted(train_A_path.iterdir())
-    if nr_A_train_imgs is not None:
-        train_A_image_names = train_A_image_names[:nr_A_train_imgs]
+    if num_train_A_images:
+        train_A_image_names = train_A_image_names[:num_train_A_images]
 
     train_B_image_names = sorted(train_B_path.iterdir())
-    if nr_B_train_imgs is not None:
-        train_B_image_names = train_B_image_names[:nr_B_train_imgs]
+    if num_train_B_images:
+        train_B_image_names = train_B_image_names[:num_train_B_images]
 
     test_A_image_names = sorted(test_A_path.iterdir())
-    if nr_A_test_imgs is not None:
-        test_A_image_names = test_A_image_names[:nr_A_test_imgs]
+    if num_test_A_images:
+        test_A_image_names = test_A_image_names[:num_test_A_images]
 
     test_B_image_names = sorted(test_B_path.iterdir())
-    if nr_B_test_imgs is not None:
-        test_B_image_names = test_B_image_names[:nr_B_test_imgs]
+    if num_test_B_images:
+        test_B_image_names = test_B_image_names[:num_test_B_images]
 
     if return_generator:
         train_AB_images_generator = data_sequence(

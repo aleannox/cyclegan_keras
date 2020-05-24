@@ -2,15 +2,24 @@ import dataclasses
 import datetime
 import json
 import pathlib
+import typing
 
 import dacite
+import tensorflow as tf
+import tensorflow_addons
 
 
 CONFIG_CONVERTERS = {
     pathlib.Path: pathlib.Path,
     tuple: tuple,
     bool: bool,
-    int: int
+    int: int,
+    float: float,
+}
+
+
+NORMALIZATIONS = {
+    'instance_normalization': tensorflow_addons.layers.InstanceNormalization
 }
 
 
@@ -66,18 +75,46 @@ def construct_result_paths(model_key=None):
 
 
 @dataclasses.dataclass
-class TrainConfig:
+class ModelConfig:
     source_images: pathlib.Path
     image_shape: tuple
     use_data_generator: bool
+    epochs: int
     batch_size: int
+    save_interval_samples: int
+    save_interval_model: int
+    normalization: str
+    lambda_1: float
+    lambda_2: float
+    lambda_D: float
+    learning_rate_D: float
+    learning_rate_G: float
+    generator_iterations: int
+    discriminator_iterations: int
+    adam_beta_1: float
+    adam_beta_2: float
+    synthetic_pool_size: int
+    use_linear_lr_decay: bool
+    linear_lr_decay_epoch_start: int
+    use_identity_learning: bool
+    identity_learning_modulus: int
+    use_patchgan_discriminator: bool
+    use_multiscale_discriminator: bool
+    use_resize_convolution: bool
+    use_supervised_learning: bool
+    supervised_learning_weight: float
+    real_discriminator_label: float
+    num_train_A_images: typing.Union[int, None]
+    num_train_B_images: typing.Union[int, None]
+    num_test_A_images: typing.Union[int, None]
+    num_test_B_images: typing.Union[int, None]
 
 
-def train_config_from_json(config_path):
+def model_config_from_json(config_path):
     with pathlib.Path(STATIC_PATHS.configs / config_path).open() as file:
         json_config = json.load(file)
     return dacite.from_dict(
-        data_class=TrainConfig,
+        data_class=ModelConfig,
         data=json_config,
         config=dacite.Config(type_hooks=CONFIG_CONVERTERS)
     )

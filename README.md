@@ -12,7 +12,6 @@ Changes after forking:
 TODO:
 - Refactor into submodules.
 - Add autoencoder.
-- Expose all configurable parameters in config.
 - Implement TensorFlow tuning options.  
   
 
@@ -55,14 +54,60 @@ Example with comments, which you should remove because they are not valid JSON:
 {
     # The subfolder of your dataset, as indicated above.
     "source_images": "<DATASET_NAME>",
-
     # Image height, width, number of channels.
     "image_shape": [256, 256, 3],
-
     # Use a generator for loading data, rather than loading all images into RAM.
     "use_data_generator": false,
-
-    "batch_size": 1
+    "epochs": 200,
+    "batch_size": 1,
+    # Save examples each nth epoch
+    "save_interval_samples": 1,
+    # Save model each nth epoch
+    "save_interval_model": 5,
+    # Normalization layer, currently only "instance_normalization".
+    "normalization": "instance_normalization",
+    # Cyclic loss weight A_2_B
+    "lambda_1": 10.0,
+    # Cyclic loss weight B_2_A
+    "lambda_2": 10.0,
+    # Weight for loss from discriminator guess on synthetic images
+    "lambda_D": 1.0,
+    "learning_rate_D": 2e-4,
+    "learning_rate_G": 2e-4,
+    # Training iterations in each training loop
+    "generator_iterations": 1,
+    "discriminator_iterations": 1,
+    "adam_beta_1": 0.5,
+    "adam_beta_2": 0.999,
+    # Size of image pools used to update the discriminators
+    "synthetic_pool_size": 50,
+    # Linear decay of learning rate, for both discriminators and generators
+    "use_linear_lr_decay": false,
+    "linear_lr_decay_epoch_start": 101,
+    # Identity learning: teach G_A2B to be close to the identity for B images (and v.v.)
+    # Helps to preserve color of inputs.
+    "use_identity_learning": false,
+    # Identity learning for each nth image
+    "identity_learning_modulus": 10,
+    # If false the discriminator learning rate should be decreased
+    "use_patchgan_discriminator": true,
+    # If True the generators have an extra encoding/decoding step to match
+    # discriminator information access
+    "use_multiscale_discriminator": false,
+    # Resize convolution - instead of transpose convolution in deconvolution
+    # layers (uk) - can reduce checkerboard artifacts but the blurring might
+    # affect the cycle-consistency
+    "use_resize_convolution": false,
+    # Add MAE between B input and G_A2B (and v.v.) to training loss
+    "use_supervised_learning": false,
+    "supervised_learning_weight": 10.0,
+    # Use e.g. 0.9 to avoid training the discriminators to zero loss
+    "real_discriminator_label": 1.0,
+    # Use only the first n images from the dataset (use all if None)
+    "num_train_A_images": null,
+    "num_train_B_images": null,
+    "num_test_A_images": null,
+    "num_test_B_images": null
 }
 ```
   
