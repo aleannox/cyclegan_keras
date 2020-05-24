@@ -215,7 +215,8 @@ class CycleGAN():
         self.data_generator_test = data["test_AB_images_generator"]
         logging.info("Data loaded.")
 
-        self.writeMetaDataToJSON()
+        if not generate_synthetic_images:
+            self.writeMetaDataToJSON()
 
         # ======= Avoid pre-allocating GPU memory ==========
         # TensorFlow wizardry
@@ -751,7 +752,7 @@ class CycleGAN():
         model.save_weights(str(model_path_w))
         json_string = model.to_json()
         with model_path_m.open('w') as outfile:
-            json.dump(json_string, outfile)
+            json.dump(json_string, outfile, indent=4)
         print(f"{model.name} has been saved in {self.result_paths.saved_models}.")
 
     def writeLossDataToFile(self, history):
@@ -762,9 +763,7 @@ class CycleGAN():
             writer.writerows(zip(*[history[key] for key in keys]))
 
     def writeMetaDataToJSON(self):
-        data = {}
-        data['meta_data'] = []
-        data['meta_data'].append({
+        data = {
             'img shape: height, width, channels': self.img_shape,
             'batch size': self.batch_size,
             'save interval': self.save_interval,
@@ -785,10 +784,15 @@ class CycleGAN():
             'beta 2': self.beta_2,
             'REAL_LABEL': self.REAL_LABEL,
             'source_images': str(self.source_images),
-        })
+            'num_train_examples': len(
+                self.data_generator_train
+                if self.data_generator_train
+                else self.A_train
+            )
+        }
 
         with (self.result_paths.base / 'meta_data.json').open('w') as outfile:
-            json.dump(data, outfile, sort_keys=True)
+            json.dump(data, outfile, sort_keys=True, indent=4)
 
     def load_weights_for_model(self, model):
         path_to_weights = sorted(
@@ -945,7 +949,7 @@ def get_arguments():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     parser.add_argument(
-        '--config-path', default='test.json',
+        '--config-path',
         help=f"JSON config path, relative to {config.STATIC_PATHS.configs}."
     )
     parser.add_argument(
@@ -967,9 +971,11 @@ def get_arguments():
     parser.set_defaults(generate_synthetic_images=False)
     parser.add_argument(
         '--verbose-tensorflow', dest='verbose_tensorflow', action='store_true',
+        help="Do not suppress TensorFlow logging output."
     )
     parser.add_argument(
         '--silent-tensorflow', dest='verbose_tensorflow', action='store_false',
+        help="Suppress TensorFlow logging output."
     )
     parser.set_defaults(verbose_tensorflow=False)
 

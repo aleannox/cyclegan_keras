@@ -25,7 +25,9 @@ class StaticPaths:
         self.source_images = self.base / 'source_images'
         self.results = self.base / 'results'
 
-STATIC_PATHS = StaticPaths(base=pathlib.Path('data'))
+STATIC_PATHS = StaticPaths(
+    base=(pathlib.Path(__file__).parents[1] / 'data').resolve()
+)
 
 
 @dataclasses.dataclass
