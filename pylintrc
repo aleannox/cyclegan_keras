@@ -1,6 +1,7 @@
 [MESSAGES CONTROL]
 
-# disable `bad-continuation` check due to a pylint bug, see https://github.com/PyCQA/pylint/issues/289
+# disable `bad-continuation` check due to a pylint bug,
+# see https://github.com/PyCQA/pylint/issues/289
 
 disable=bad-continuation,
         refactoring,
@@ -9,10 +10,4 @@ disable=bad-continuation,
         missing-function-docstring,
         missing-module-docstring,
         invalid-name,
-        logging-fstring-interpolation,
-        line-too-long
-
-
-[FORMAT]
-
-good-names=a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,y,z
+        logging-fstring-interpolation

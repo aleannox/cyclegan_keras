@@ -89,7 +89,7 @@ def plot_losses(model_key, point_gap=1):
     D = butter_lowpass_filter(D_losses[points], cutoff, fs, order)
     R = butter_lowpass_filter(reconstruction_losses[points], cutoff, fs, order)
 
-    x = np.array(points) / meta_data['num_train_examples']
+    x = np.array(points) / meta_data['num_train_images_max']
 
     plt.figure(1)
     plt.plot(x, GA, label='G_A_losses')

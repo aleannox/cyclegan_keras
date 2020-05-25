@@ -8,7 +8,6 @@ import random
 
 import numpy as np
 import tensorflow as tf
-import tensorflow.keras.layers as layers
 
 import config
 import util
@@ -20,8 +19,8 @@ def multi_scale_discriminator(
     use_patchgan_discriminator,
     name=None
 ):
-    x1 = layers.Input(shape=image_shape)
-    x2 = layers.AveragePooling2D(pool_size=(2, 2))(x1)
+    x1 = tf.keras.Input(shape=image_shape)
+    x2 = tf.keras.layers.AveragePooling2D(pool_size=(2, 2))(x1)
     out_x1 = discriminator(
         image_shape,
         normalization,
@@ -44,7 +43,7 @@ def discriminator(
     name=None
 ):
     # Specify input
-    input_img = layers.Input(shape=image_shape)
+    input_img = tf.keras.Input(shape=image_shape)
     # Layer 1 (instance normalization is not used for this layer)
     x = ck(input_img, 64, 2)
     # Layer 2
@@ -55,13 +54,13 @@ def discriminator(
     x = ck(x, 512, 1, normalization)
     # Output layer
     if use_patchgan_discriminator:
-        x = layers.Conv2D(
+        x = tf.keras.layers.Conv2D(
             filters=1, kernel_size=4, strides=1, padding='same'
         )(x)
     else:
-        x = layers.Flatten()(x)
-        x = layers.Dense(1)(x)
-    # x = layers.Activation('sigmoid')(x)
+        x = tf.keras.layers.Flatten()(x)
+        x = tf.keras.layers.Dense(1)(x)
+    # x = tf.keras.layers.Activation('sigmoid')(x)
     # ^ No sigmoid to avoid near-fp32 machine epsilon discriminator cost.
     return tf.keras.Model(inputs=input_img, outputs=x, name=name)
 
@@ -74,7 +73,7 @@ def generator(
     name=None
 ):
     # Specify input
-    input_img = layers.Input(shape=image_shape)
+    input_img = tf.keras.Input(shape=image_shape)
     # Layer 1
     x = util.ReflectionPadding2D((3, 3))(input_img)
     x = c7Ak(x, 32, normalization)
@@ -105,16 +104,16 @@ def generator(
         normalization, use_resize_convolution
     )
     x = util.ReflectionPadding2D((3, 3))(x)
-    x = layers.Conv2D(
+    x = tf.keras.layers.Conv2D(
         image_shape[-1], kernel_size=7, strides=1
     )(x)
-    x = layers.Activation('tanh')(x)
-    # ^ They say they use ReLU they don't.
+    x = tf.keras.activations.tanh(x)
+    # ^ They say they use ReLU, but they don't.
     return tf.keras.Model(inputs=input_img, outputs=x, name=name)
 
 
 def ck(x, k, stride, normalization=None):
-    x = layers.Conv2D(
+    x = tf.keras.layers.Conv2D(
         filters=k, kernel_size=4, strides=stride, padding='same'
     )(x)
     # Normalization is not done on the first discriminator layer
@@ -122,29 +121,29 @@ def ck(x, k, stride, normalization=None):
         x = config.NORMALIZATIONS[normalization](
             axis=3, center=True, epsilon=1e-5
         )(x, training=True)
-    x = layers.LeakyReLU(alpha=0.2)(x)
+    x = tf.keras.activations.relu(x, alpha=0.2)  # LeakyReLU
     return x
 
 
 def c7Ak(x, k, normalization):
-    x = layers.Conv2D(
+    x = tf.keras.layers.Conv2D(
         filters=k, kernel_size=7, strides=1, padding='valid'
     )(x)
     x = config.NORMALIZATIONS[normalization](
         axis=3, center=True, epsilon=1e-5
     )(x, training=True)
-    x = layers.Activation('relu')(x)
+    x = tf.keras.activations.relu(x)
     return x
 
 
 def dk(x, k, normalization):
-    x = layers.Conv2D(
+    x = tf.keras.layers.Conv2D(
         filters=k, kernel_size=3, strides=2, padding='same'
     )(x)
     x = config.NORMALIZATIONS[normalization](
         axis=3, center=True, epsilon=1e-5
     )(x, training=True)
-    x = layers.Activation('relu')(x)
+    x = tf.keras.activations.relu(x)
     return x
 
 
@@ -152,42 +151,42 @@ def Rk(x0, normalization):
     k = int(x0.shape[-1])
     # first layer
     x = util.ReflectionPadding2D((1, 1))(x0)
-    x = layers.Conv2D(
+    x = tf.keras.layers.Conv2D(
         filters=k, kernel_size=3, strides=1, padding='valid'
     )(x)
     x = config.NORMALIZATIONS[normalization](
         axis=3, center=True, epsilon=1e-5
     )(x, training=True)
-    x = layers.Activation('relu')(x)
+    x = tf.keras.activations.relu(x)
     # second layer
     x = util.ReflectionPadding2D((1, 1))(x)
-    x = layers.Conv2D(
+    x = tf.keras.layers.Conv2D(
         filters=k, kernel_size=3, strides=1, padding='valid'
     )(x)
     x = config.NORMALIZATIONS[normalization](
         axis=3, center=True, epsilon=1e-5
     )(x, training=True)
     # merge
-    x = layers.add([x, x0])
+    x = tf.keras.layers.add([x, x0])
     return x
 
 
 def uk(x, k, normalization, use_resize_convolution):
     # (up sampling followed by 1x1 convolution <=> fractional-strided 1/2)
     if use_resize_convolution:
-        x = layers.UpSampling2D(size=(2, 2))(x)  # Nearest neighbour
+        x = tf.keras.layers.UpSampling2D(size=(2, 2))(x)  # Nearest neighbour
         x = util.ReflectionPadding2D((1, 1))(x)
-        x = layers.Conv2D(
+        x = tf.keras.layers.Conv2D(
             filters=k, kernel_size=3, strides=1, padding='valid'
         )(x)
     else:
-        x = layers.Conv2DTranspose(
+        x = tf.keras.layers.Conv2DTranspose(
             filters=k, kernel_size=3, strides=2, padding='same'
         )(x)  # this matches fractionally stided with stride 1/2
     x = config.NORMALIZATIONS[normalization](
         axis=3, center=True, epsilon=1e-5
     )(x, training=True)
-    x = layers.Activation('relu')(x)
+    x = tf.keras.activations.relu(x)
     return x
 
 

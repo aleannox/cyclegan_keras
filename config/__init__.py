@@ -43,22 +43,24 @@ STATIC_PATHS = StaticPaths(
 class ResultPaths:
     base: pathlib.Path
     saved_models: pathlib.Path = dataclasses.field(init=False)
-    output_history_samples: pathlib.Path = dataclasses.field(init=False)
-    output_history_samples_train_A: pathlib.Path = dataclasses.field(init=False)
-    output_history_samples_train_B: pathlib.Path = dataclasses.field(init=False)
-    output_history_samples_test_A: pathlib.Path = dataclasses.field(init=False)
-    output_history_samples_test_B: pathlib.Path = dataclasses.field(init=False)
-    generated_synthetic_images_A: pathlib.Path = dataclasses.field(init=False)
-    generated_synthetic_images_B: pathlib.Path = dataclasses.field(init=False)
+    examples_history: pathlib.Path = dataclasses.field(init=False)
+    examples_history_train_A: pathlib.Path = dataclasses.field(init=False)
+    examples_history_train_B: pathlib.Path = dataclasses.field(init=False)
+    examples_history_test_A: pathlib.Path = dataclasses.field(init=False)
+    examples_history_test_B: pathlib.Path = dataclasses.field(init=False)
+    generated_synthetic_A_images: pathlib.Path = dataclasses.field(init=False)
+    generated_synthetic_B_images: pathlib.Path = dataclasses.field(init=False)
     def __post_init__(self):
         self.saved_models = self.base / 'saved_models'
-        self.output_history_samples = self.base / 'output_history_samples'
-        self.output_history_samples_train_A = self.output_history_samples / 'train_A'
-        self.output_history_samples_train_B = self.output_history_samples / 'train_B'
-        self.output_history_samples_test_A = self.output_history_samples / 'test_A'
-        self.output_history_samples_test_B = self.output_history_samples / 'test_B'
-        self.generated_synthetic_images_A = self.base / 'generated_synthetic_images' / 'A'
-        self.generated_synthetic_images_B = self.base / 'generated_synthetic_images' / 'B'
+        self.examples_history = self.base / 'examples_history'
+        self.examples_history_train_A = self.examples_history / 'train_A'
+        self.examples_history_train_B = self.examples_history / 'train_B'
+        self.examples_history_test_A = self.examples_history / 'test_A'
+        self.examples_history_test_B = self.examples_history / 'test_B'
+        self.generated_synthetic_A_images = \
+            self.base / 'generated_synthetic_images' / 'A'
+        self.generated_synthetic_B_images = \
+            self.base / 'generated_synthetic_images' / 'B'
 
 
 def construct_result_paths(model_key=None, create_dirs=False):
@@ -77,7 +79,7 @@ def construct_result_paths(model_key=None, create_dirs=False):
 
 @dataclasses.dataclass
 class ModelConfig:
-    source_images: pathlib.Path
+    dataset_name: pathlib.Path
     image_shape: tuple
     use_data_generator: bool
     epochs: int
@@ -85,8 +87,8 @@ class ModelConfig:
     save_interval_samples: int
     save_interval_model: int
     normalization: str
-    lambda_1: float
-    lambda_2: float
+    lambda_ABA: float
+    lambda_BAB: float
     lambda_D: float
     learning_rate_D: float
     learning_rate_G: float
@@ -94,6 +96,7 @@ class ModelConfig:
     discriminator_iterations: int
     adam_beta_1: float
     adam_beta_2: float
+    num_examples_to_track: int
     synthetic_pool_size: int
     use_linear_lr_decay: bool
     linear_lr_decay_epoch_start: int

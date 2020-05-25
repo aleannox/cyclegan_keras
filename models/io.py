@@ -4,6 +4,8 @@
 import csv
 import json
 import logging
+import math
+import random
 
 import numpy as np
 import PIL.Image
@@ -13,159 +15,168 @@ import config
 import util
 
 
-def load_data(
-    source_images,
-    num_channels=3,
-    batch_size=1,
-    num_train_A_images=None,
-    num_train_B_images=None,
-    num_test_A_images=None,
-    num_test_B_images=None,
-    return_generator=True
+# Match JPG and PNG files with `glob`.
+ALLOWED_IMAGE_PATTERN = '*.[jJpP][pPnN]*[gG]'
+
+
+def load_data(model_config):
+    # TODO: While we need to correct for a size imbalance of A and B datasets
+    # for the training set, we don't need to do this for the test set.
+    # We are currently doing this if using the data generator.
+    # The only negative effect of doing so is running image generation multiple
+    # times for some images in the generation mode, which is inefficient.
+    data = {}
+    for tt in ['train', 'test']:
+        for ab in ['A', 'B']:
+            data[f'{tt}_{ab}_image_paths'] = sorted(
+                (
+                    config.STATIC_PATHS.source_images /
+                    model_config.dataset_name / f'{tt}_{ab}'
+                ).glob(ALLOWED_IMAGE_PATTERN)
+            )
+            if model_config.__dict__[f'num_{tt}_{ab}_images']:
+                data[f'{tt}_{ab}_image_paths'] = \
+                    data[f'{tt}_{ab}_image_paths'][
+                        :model_config.__dict__[f'num_{tt}_{ab}_images']
+                    ]
+            data[f'{tt}_{ab}_image_examples'] = create_image_array(
+                random.sample(
+                    data[f'{tt}_{ab}_image_paths'],
+                    model_config.num_examples_to_track
+                ),
+                model_config.image_shape
+            )
+            if not model_config.use_data_generator:
+                data[f'{tt}_{ab}_images'] = create_image_array(
+                    data[f'{tt}_{ab}_image_paths'],
+                    model_config.image_shape
+                )
+        if model_config.use_data_generator:
+            data[f'{tt}_batch_generator'] = DataGenerator(
+                data[f'{tt}_A_image_paths'],
+                data[f'{tt}_B_image_paths'],
+                batch_size=model_config.batch_size,
+                image_shape=model_config.image_shape
+            )
+        data[f'num_{tt}_images_max'] = max(
+            len(data[f'{tt}_A_image_paths']),
+            len(data[f'{tt}_B_image_paths'])
+        )
+        data[f'num_{tt}_batches'] = compute_num_batches(
+            data[f'num_{tt}_images_max'],
+            model_config.batch_size
+        )
+    return data
+
+
+class DataGenerator(tf.keras.utils.Sequence):
+    def __init__(
+        self,
+        A_image_paths,
+        B_image_paths,
+        image_shape,
+        batch_size
+    ):
+        self.batch_size = batch_size
+        self.image_shape = image_shape
+        self.A_image_paths = A_image_paths
+        self.B_image_paths = B_image_paths
+
+    def __len__(self):
+        return compute_num_batches(
+            max(len(self.A_image_paths), len(self.B_image_paths)),
+            self.batch_size
+        )
+
+    def __getitem__(self, idx):
+        A_image_paths_batch = get_batch(
+            idx, self.batch_size, self.A_image_paths, len(self.B_image_paths)
+        )
+        B_image_paths_batch = get_batch(
+            idx, self.batch_size, self.B_image_paths, len(self.A_image_paths)
+        )
+        return {
+            'A_image_paths': A_image_paths_batch,
+            'B_image_paths': B_image_paths_batch,
+            'A_images': create_image_array(
+                A_image_paths_batch, self.image_shape
+            ),
+            'B_images': create_image_array(
+                B_image_paths_batch, self.image_shape
+            ),
+        }
+
+
+def get_batch(
+    batch_index,
+    batch_size,
+    images,
+    num_other_images
 ):
-    train_A_path = config.STATIC_PATHS.source_images / source_images / 'train_A'
-    train_B_path = config.STATIC_PATHS.source_images / source_images / 'train_B'
-    test_A_path = config.STATIC_PATHS.source_images / source_images / 'test_A'
-    test_B_path = config.STATIC_PATHS.source_images / source_images / 'test_B'
-
-    train_A_image_names = sorted(train_A_path.iterdir())
-    if num_train_A_images:
-        train_A_image_names = train_A_image_names[:num_train_A_images]
-
-    train_B_image_names = sorted(train_B_path.iterdir())
-    if num_train_B_images:
-        train_B_image_names = train_B_image_names[:num_train_B_images]
-
-    test_A_image_names = sorted(test_A_path.iterdir())
-    if num_test_A_images:
-        test_A_image_names = test_A_image_names[:num_test_A_images]
-
-    test_B_image_names = sorted(test_B_path.iterdir())
-    if num_test_B_images:
-        test_B_image_names = test_B_image_names[:num_test_B_images]
-
-    if return_generator:
-        train_AB_images_generator = data_sequence(
-            train_A_image_names,
-            train_B_image_names,
-            batch_size=batch_size
-        )
-        test_AB_images_generator = data_sequence(
-            test_A_image_names,
-            test_B_image_names,
-            batch_size=batch_size
-        )
-        train_A_images = None
-        train_B_images = None
-        test_A_images = None
-        test_B_images = None
+    """Fill batch with random samples in order to match other dataset in case it
+    has more samples and we are in a batch affected by this.
+    """
+    batch_slice = slice(
+        batch_index * batch_size, (batch_index + 1) * batch_size
+    )
+    num_image_batches = compute_num_batches(len(images), batch_size)
+    if (
+        len(images) < num_other_images and
+        batch_index >= num_image_batches - 1
+    ):
+        # TODO: Use a more memory efficient solution.
+        if isinstance(images, np.ndarray):
+            indices_enlarged = list(range(len(images))) + random.sample(
+                range(len(images)), num_other_images - len(images)
+            )
+            images_enlarged = images[indices_enlarged]
+        else:
+            images_enlarged = images + random.sample(
+                images, num_other_images - len(images)
+            )
+        return images_enlarged[batch_slice]
     else:
-        train_AB_images_generator = None
-        test_AB_images_generator = None
-        train_A_images = create_image_array(train_A_image_names, num_channels)
-        train_B_images = create_image_array(train_B_image_names, num_channels)
-        test_A_images = create_image_array(test_A_image_names, num_channels)
-        test_B_images = create_image_array(test_B_image_names, num_channels)
-
-    return {
-        "train_A_images": train_A_images,
-        "train_B_images": train_B_images,
-        "test_A_images": test_A_images,
-        "test_B_images": test_B_images,
-        "train_A_image_names": train_A_image_names,
-        "train_B_image_names": train_B_image_names,
-        "test_A_image_names": test_A_image_names,
-        "test_B_image_names": test_B_image_names,
-        "train_AB_images_generator": train_AB_images_generator,
-        "test_AB_images_generator": test_AB_images_generator
-    }
+        return images[batch_slice]
 
 
-ALLOWED_SUFFIXES = ['.jpg', '.jpeg', '.png']
-
-
-def create_image_array(image_list, num_channels):
+def create_image_array(image_paths, image_shape):
     image_array = []
-    for image_name in image_list:
-        if image_name.suffix.lower() in ALLOWED_SUFFIXES:
-            if num_channels == 1:  # Gray scale image
-                image = np.array(PIL.Image.open(image_name))
-                image = image[:, :, np.newaxis]
-            else:
-                image = np.array(PIL.Image.open(image_name))
-            image = normalize_array(image)
-            if image.shape[-1] == num_channels:
-                image_array.append(image)
+    for image_path in image_paths:
+        if image_shape[-1] == 1:  # Gray scale image
+            image = np.array(PIL.Image.open(image_path))
+            image = image[:, :, np.newaxis]
+        else:
+            image = np.array(PIL.Image.open(image_path))
+        if image.shape != image_shape:
+            raise ValueError(
+                f"{image_path} has the wrong shape: "
+                f"{image.shape} instead of {image_shape}."
+            )
+        image_array.append(image)
+    return normalize_array(np.array(image_array))
 
-    return np.array(image_array)
 
-
-# If using 16 bit depth images, use the formula 'array = array / 32767.5 - 1' instead
 def normalize_array(array):
+    "Normalize 8bit image array to max/min = ±1"
+    # If using 16 bit depth images, use 'array = array / 32767.5 - 1' instead
     array = array / 127.5 - 1
     return array
 
 
-class data_sequence(tf.keras.utils.Sequence):
-    def __init__(
-        self,
-        image_list_A,
-        image_list_B,
-        batch_size=1
-    ):
-        self.batch_size = batch_size
-        self.data_A = []
-        self.data_B = []
-        for image_name in image_list_A:
-            if image_name.suffix.lower() in ALLOWED_SUFFIXES:
-                self.data_A.append(image_name)
-        for image_name in image_list_B:
-            if image_name.suffix.lower() in ALLOWED_SUFFIXES:
-                self.data_B.append(image_name)
-
-    def __len__(self):
-        max_num_images = max(len(self.data_A), len(self.data_B))
-        return (
-            max_num_images // self.batch_size + 1
-            if max_num_images % self.batch_size > 0
-            else max_num_images // self.batch_size
-        )
-
-    def __getitem__(self, idx):
-        if idx >= min(len(self.data_A), len(self.data_B)):
-            # If all images soon are used for one domain,
-            # randomly pick from this domain
-            if len(self.data_A) <= len(self.data_B):
-                indexes_A = np.random.randint(len(self.data_A), size=self.batch_size)
-                batch_A = []
-                for i in indexes_A:
-                    batch_A.append(self.data_A[i])
-                batch_B = self.data_B[idx * self.batch_size:(idx + 1) * self.batch_size]
-            else:
-                indexes_B = np.random.randint(len(self.data_B), size=self.batch_size)
-                batch_B = []
-                for i in indexes_B:
-                    batch_B.append(self.data_B[i])
-                batch_A = self.data_A[idx * self.batch_size:(idx + 1) * self.batch_size]
-        else:
-            batch_A = self.data_A[idx * self.batch_size:(idx + 1) * self.batch_size]
-            batch_B = self.data_B[idx * self.batch_size:(idx + 1) * self.batch_size]
-
-        real_images_A = create_image_array(batch_A, 3)
-        real_images_B = create_image_array(batch_B, 3)
-
-        return {
-            'real_images_A': real_images_A,
-            'real_images_B': real_images_B,
-            'real_image_paths_A': batch_A,
-            'real_image_paths_B': batch_B
-        }
+def pil_image_from_normalized_array(image_array):
+    "Create 8bit image from array with max/min = ±1"
+    return PIL.Image.fromarray(
+        ((image_array + 1) * 127.5).astype('uint8')
+    )
 
 
 def save_model(model, epoch, result_paths_saved_models):
     model_path_m = result_paths_saved_models / f'{model.name}_model.json'
     # ^ Architecture constant accross epochs.
-    model_path_w = result_paths_saved_models / f'{model.name}_weights_epoch_{epoch:04d}.hdf5'
+    model_path_w = (
+        result_paths_saved_models /
+        f'{model.name}_weights_epoch_{epoch:04d}.hdf5'
+    )
     model.save_weights(str(model_path_w))
     model_path_m.write_text(model.to_json())
 
@@ -194,3 +205,11 @@ def load_weights_for_model(model, result_paths_saved_models):
     )[-1]  # Load last available weights.
     logging.info("Loading weights from %s.", path_to_weights)
     model.load_weights(str(path_to_weights))
+
+
+def compute_num_batches(num_examples, batch_size):
+    return int(
+        math.ceil(
+            num_examples / batch_size
+        )
+    )

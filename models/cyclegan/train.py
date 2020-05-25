@@ -25,16 +25,15 @@ if __name__ == '__main__':
     arguments = get_arguments()
     logging.info("Running with the following arguments.")
     logging.info(arguments)
-    config_ = config.model_config_from_json(arguments.config_path)
+    model_config = config.model_config_from_json(arguments.config_path)
     logging.info("Running with the following config.")
-    logging.info(config_)
+    logging.info(model_config)
     util.set_tensorflow_verbosity(arguments.verbose_tensorflow)
     util.set_tensorflow_speedup_options(
         use_xla=arguments.use_xla,
         use_auto_mixed_precision=arguments.use_auto_mixed_precision
     )
 
-    models.cyclegan.CycleGAN(
-        config_=config_,
-        generate_synthetic_images=False
-    )
+    model = models.cyclegan.CycleGAN(model_config)
+    model.prepare_data()
+    model.train()

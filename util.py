@@ -84,15 +84,3 @@ def update_learning_rate(model, decrement):
         0
     )
     tf.keras.backend.set_value(model.optimizer.lr, new_lr)
-
-
-def tensorflow_mse(y_true, y_pred):
-    # TODO: Check for builtin replacement.
-    loss = tf.reduce_mean(tf.math.squared_difference(y_pred, y_true))
-    return loss
-
-
-def tensorflow_mae(y_true, y_pred):
-    # TODO: Check for builtin replacement.
-    loss = tf.reduce_mean(tf.abs(y_pred - y_true))
-    return loss
