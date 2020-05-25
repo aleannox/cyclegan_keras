@@ -22,12 +22,12 @@ def butter_lowpass_filter(data, cutoff, fs, order=5):
 
 
 def plot_losses(model_key, point_gap=1):
-    DA_losses = []
-    DB_losses = []
-    gA_d_losses_synthetic = []
-    gB_d_losses_synthetic = []
-    gA_losses_reconstructed = []
-    gB_losses_reconstructed = []
+    D_A_losses = []
+    D_B_losses = []
+    G_A_D_losses_synthetic = []
+    G_B_D_losses_synthetic = []
+    G_A_losses_reconstructed = []
+    G_B_losses_reconstructed = []
     D_losses = []
     G_losses = []
     reconstruction_losses = []
@@ -42,12 +42,12 @@ def plot_losses(model_key, point_gap=1):
     ).open(newline='') as csvfile:
         reader = csv.DictReader(csvfile)
         for row in reader:
-            DA_losses.append(float(row['DA_losses']))
-            DB_losses.append(float(row['DB_losses']))
-            gA_d_losses_synthetic.append(float(row['gA_d_losses_synthetic']))
-            gB_d_losses_synthetic.append(float(row['gB_d_losses_synthetic']))
-            gA_losses_reconstructed.append(float(row['gA_losses_reconstructed']))
-            gB_losses_reconstructed.append(float(row['gB_losses_reconstructed']))
+            D_A_losses.append(float(row['D_A_losses']))
+            D_B_losses.append(float(row['D_B_losses']))
+            G_A_D_losses_synthetic.append(float(row['G_A_D_losses_synthetic']))
+            G_B_D_losses_synthetic.append(float(row['G_B_D_losses_synthetic']))
+            G_A_losses_reconstructed.append(float(row['G_A_losses_reconstructed']))
+            G_B_losses_reconstructed.append(float(row['G_B_losses_reconstructed']))
             D_losses.append(float(row['D_losses']))
             reconstruction_losses.append(float(row['reconstruction_losses']))
             G_loss = row['G_losses']
@@ -56,18 +56,18 @@ def plot_losses(model_key, point_gap=1):
             G_losses.append(float(G_loss))
 
         # Calculate interesting things to plot
-        DA_losses = np.array(DA_losses)
-        DB_losses = np.array(DB_losses)
-        GA_losses = np.add(np.array(gA_d_losses_synthetic), np.array(gA_losses_reconstructed))
-        GB_losses = np.add(np.array(gB_d_losses_synthetic), np.array(gB_losses_reconstructed))
-        RA_losses = np.array(gA_losses_reconstructed)
-        RB_losses = np.array(gB_losses_reconstructed)
+        D_A_losses = np.array(D_A_losses)
+        D_B_losses = np.array(D_B_losses)
+        G_A_losses = np.add(np.array(G_A_D_losses_synthetic), np.array(G_A_losses_reconstructed))
+        G_B_losses = np.add(np.array(G_B_D_losses_synthetic), np.array(G_B_losses_reconstructed))
+        RA_losses = np.array(G_A_losses_reconstructed)
+        RB_losses = np.array(G_B_losses_reconstructed)
 
         G_losses = np.array(G_losses)
         D_losses = np.array(D_losses)
         reconstruction_losses = np.add(
-            np.array(gA_losses_reconstructed),
-            np.array(gB_losses_reconstructed)
+            np.array(G_A_losses_reconstructed),
+            np.array(G_B_losses_reconstructed)
         )
 
     points = range(0, len(G_losses), point_gap)
@@ -76,11 +76,11 @@ def plot_losses(model_key, point_gap=1):
     order = 6
 
     # Lowpass filter
-    GA = butter_lowpass_filter(GA_losses[points], cutoff, fs, order)
-    GB = butter_lowpass_filter(GB_losses[points], cutoff, fs, order)
+    GA = butter_lowpass_filter(G_A_losses[points], cutoff, fs, order)
+    GB = butter_lowpass_filter(G_B_losses[points], cutoff, fs, order)
 
-    DA = butter_lowpass_filter(DA_losses[points], cutoff, fs, order)
-    DB = butter_lowpass_filter(DB_losses[points], cutoff, fs, order)
+    DA = butter_lowpass_filter(D_A_losses[points], cutoff, fs, order)
+    DB = butter_lowpass_filter(D_B_losses[points], cutoff, fs, order)
 
     RA = butter_lowpass_filter(RA_losses[points], cutoff, fs, order)
     RB = butter_lowpass_filter(RB_losses[points], cutoff, fs, order)
@@ -92,15 +92,15 @@ def plot_losses(model_key, point_gap=1):
     x = np.array(points) / meta_data['num_train_examples']
 
     plt.figure(1)
-    plt.plot(x, GA, label='GA_losses')
-    plt.plot(x, GB, label='GB_losses')
+    plt.plot(x, GA, label='G_A_losses')
+    plt.plot(x, GB, label='G_B_losses')
     plt.xlabel('epochs')
     plt.ylabel('generator losses')
     plt.legend()
 
     plt.figure(2)
-    plt.plot(x, DA, label='DA_losses')
-    plt.plot(x, DB, label='DB_losses')
+    plt.plot(x, DA, label='D_A_losses')
+    plt.plot(x, DB, label='D_B_losses')
     plt.xlabel('epochs')
     plt.ylabel('discriminator losses')
     plt.legend()

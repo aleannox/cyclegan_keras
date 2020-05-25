@@ -1,8 +1,16 @@
+"Model-agnostic IO."
+
+
+import csv
+import json
+import logging
+
 import numpy as np
-from PIL import Image
-from tensorflow.keras.utils import Sequence
+import PIL.Image
+import tensorflow as tf
 
 import config
+import util
 
 
 def load_data(
@@ -81,10 +89,10 @@ def create_image_array(image_list, num_channels):
     for image_name in image_list:
         if image_name.suffix.lower() in ALLOWED_SUFFIXES:
             if num_channels == 1:  # Gray scale image
-                image = np.array(Image.open(image_name))
+                image = np.array(PIL.Image.open(image_name))
                 image = image[:, :, np.newaxis]
             else:
-                image = np.array(Image.open(image_name))
+                image = np.array(PIL.Image.open(image_name))
             image = normalize_array(image)
             if image.shape[-1] == num_channels:
                 image_array.append(image)
@@ -98,7 +106,7 @@ def normalize_array(array):
     return array
 
 
-class data_sequence(Sequence):
+class data_sequence(tf.keras.utils.Sequence):
     def __init__(
         self,
         image_list_A,
@@ -106,37 +114,42 @@ class data_sequence(Sequence):
         batch_size=1
     ):
         self.batch_size = batch_size
-        self.train_A = []
-        self.train_B = []
+        self.data_A = []
+        self.data_B = []
         for image_name in image_list_A:
             if image_name.suffix.lower() in ALLOWED_SUFFIXES:
-                self.train_A.append(image_name)
+                self.data_A.append(image_name)
         for image_name in image_list_B:
             if image_name.suffix.lower() in ALLOWED_SUFFIXES:
-                self.train_B.append(image_name)
+                self.data_B.append(image_name)
 
     def __len__(self):
-        return max(len(self.train_A), len(self.train_B)) // self.batch_size + 1
+        max_num_images = max(len(self.data_A), len(self.data_B))
+        return (
+            max_num_images // self.batch_size + 1
+            if max_num_images % self.batch_size > 0
+            else max_num_images // self.batch_size
+        )
 
     def __getitem__(self, idx):
-        if idx >= min(len(self.train_A), len(self.train_B)):
+        if idx >= min(len(self.data_A), len(self.data_B)):
             # If all images soon are used for one domain,
             # randomly pick from this domain
-            if len(self.train_A) <= len(self.train_B):
-                indexes_A = np.random.randint(len(self.train_A), size=self.batch_size)
+            if len(self.data_A) <= len(self.data_B):
+                indexes_A = np.random.randint(len(self.data_A), size=self.batch_size)
                 batch_A = []
                 for i in indexes_A:
-                    batch_A.append(self.train_A[i])
-                batch_B = self.train_B[idx * self.batch_size:(idx + 1) * self.batch_size]
+                    batch_A.append(self.data_A[i])
+                batch_B = self.data_B[idx * self.batch_size:(idx + 1) * self.batch_size]
             else:
-                indexes_B = np.random.randint(len(self.train_B), size=self.batch_size)
+                indexes_B = np.random.randint(len(self.data_B), size=self.batch_size)
                 batch_B = []
                 for i in indexes_B:
-                    batch_B.append(self.train_B[i])
-                batch_A = self.train_A[idx * self.batch_size:(idx + 1) * self.batch_size]
+                    batch_B.append(self.data_B[i])
+                batch_A = self.data_A[idx * self.batch_size:(idx + 1) * self.batch_size]
         else:
-            batch_A = self.train_A[idx * self.batch_size:(idx + 1) * self.batch_size]
-            batch_B = self.train_B[idx * self.batch_size:(idx + 1) * self.batch_size]
+            batch_A = self.data_A[idx * self.batch_size:(idx + 1) * self.batch_size]
+            batch_B = self.data_B[idx * self.batch_size:(idx + 1) * self.batch_size]
 
         real_images_A = create_image_array(batch_A, 3)
         real_images_B = create_image_array(batch_B, 3)
@@ -147,3 +160,37 @@ class data_sequence(Sequence):
             'real_image_paths_A': batch_A,
             'real_image_paths_B': batch_B
         }
+
+
+def save_model(model, epoch, result_paths_saved_models):
+    model_path_m = result_paths_saved_models / f'{model.name}_model.json'
+    # ^ Architecture constant accross epochs.
+    model_path_w = result_paths_saved_models / f'{model.name}_weights_epoch_{epoch:04d}.hdf5'
+    model.save_weights(str(model_path_w))
+    model_path_m.write_text(model.to_json())
+
+
+def save_metadata(data, result_paths_base):
+    with (result_paths_base / 'meta_data.json').open('w') as outfile:
+        json.dump(
+            data, outfile,
+            sort_keys=True, indent=4, cls=util.CustomJSONEncoder
+        )
+
+
+def save_losses(history, result_paths_base):
+    keys = sorted(history.keys())
+    with (result_paths_base / 'loss_output.csv').open('w') as csv_file:
+        writer = csv.writer(csv_file, delimiter=',')
+        writer.writerow(keys)
+        writer.writerows(zip(*[history[key] for key in keys]))
+
+
+def load_weights_for_model(model, result_paths_saved_models):
+    if not result_paths_saved_models.exists():
+        raise FileNotFoundError(f"{result_paths_saved_models} does not exist.")
+    path_to_weights = sorted(
+        result_paths_saved_models.glob(f'{model.name}_weights_epoch_*.hdf5')
+    )[-1]  # Load last available weights.
+    logging.info("Loading weights from %s.", path_to_weights)
+    model.load_weights(str(path_to_weights))

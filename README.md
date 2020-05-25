@@ -10,9 +10,8 @@ Changes after forking:
 - Changed config, IO, control, module structure.
 
 TODO:
-- Refactor into submodules.
 - Add autoencoder.
-- Implement TensorFlow tuning options.  
+- Add TensorBoard callbacks. 
   
 
 ## Setup project
@@ -116,9 +115,9 @@ Example with comments, which you should remove because they are not valid JSON:
 
 Train a model with  
 ```
-python model.py --config-path <CONFIG_NAME>.json
+python models/cyclegan/train.py --config-path <CONFIG_NAME>.json
 ```
-See `python model.py --help` for additional flags.
+See `python models/cyclegan/train.py --help` for additional flags.
 
 Results of model training are stored at various intervals in `data/results/<MODEL_KEY>`  
 where `<MODEL_KEY>` is the timestamp at the start of training.  
@@ -150,9 +149,8 @@ A possible use case for a different config for image generation is using a diffe
 
 After (optionally, see above) preparing the dataset and config, run
 ```
-python model.py \
+python models/cyclegan/generate.py \
     --config-path <CONFIG_NAME>.json \
-    --model-key <MODEL_KEY> \
-    --generate-synthetic-images
+    --model-key <MODEL_KEY>
 ```
-See `python model.py --help` for additional flags.
+See `python models/cyclegan/generate.py --help` for additional flags.
