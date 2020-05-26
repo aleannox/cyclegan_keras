@@ -27,40 +27,42 @@ def load_data(model_config):
     # times for some images in the generation mode, which is inefficient.
     data = {}
     for tt in ['train', 'test']:
-        for ab in ['A', 'B']:
-            data[f'{tt}_{ab}_image_paths'] = sorted(
+        data[f'{tt}_image_paths'] = {}
+        data[f'{tt}_images'] = {}
+        data[f'{tt}_image_examples'] = {}
+        for domain in config.DOMAINS:
+            data[f'{tt}_image_paths'][domain] = sorted(
                 (
                     config.STATIC_PATHS.source_images /
-                    model_config.dataset_name / f'{tt}_{ab}'
+                    model_config.dataset_name / f'{tt}_{domain}'
                 ).glob(ALLOWED_IMAGE_PATTERN)
             )
-            if model_config.__dict__[f'num_{tt}_{ab}_images']:
-                data[f'{tt}_{ab}_image_paths'] = \
-                    data[f'{tt}_{ab}_image_paths'][
-                        :model_config.__dict__[f'num_{tt}_{ab}_images']
+            if model_config.__dict__[f'num_{tt}_{domain}_images']:
+                data[f'{tt}_image_paths'][domain] = \
+                    data[f'{tt}_image_paths'][domain][
+                        :model_config.__dict__[f'num_{tt}_{domain}_images']
                     ]
-            data[f'{tt}_{ab}_image_examples'] = create_image_array(
+            data[f'{tt}_image_examples'][domain] = create_image_array(
                 random.sample(
-                    data[f'{tt}_{ab}_image_paths'],
+                    data[f'{tt}_image_paths'][domain],
                     model_config.num_examples_to_track
                 ),
                 model_config.image_shape
             )
             if not model_config.use_data_generator:
-                data[f'{tt}_{ab}_images'] = create_image_array(
-                    data[f'{tt}_{ab}_image_paths'],
+                data[f'{tt}_images'][domain] = create_image_array(
+                    data[f'{tt}_image_paths'][domain],
                     model_config.image_shape
                 )
         if model_config.use_data_generator:
             data[f'{tt}_batch_generator'] = DataGenerator(
-                data[f'{tt}_A_image_paths'],
-                data[f'{tt}_B_image_paths'],
+                data[f'{tt}_image_paths'],
                 batch_size=model_config.batch_size,
                 image_shape=model_config.image_shape
             )
         data[f'num_{tt}_images_max'] = max(
-            len(data[f'{tt}_A_image_paths']),
-            len(data[f'{tt}_B_image_paths'])
+            len(data[f'{tt}_image_paths'][domain])
+            for domain in config.DOMAINS
         )
         data[f'num_{tt}_batches'] = compute_num_batches(
             data[f'num_{tt}_images_max'],
@@ -72,39 +74,39 @@ def load_data(model_config):
 class DataGenerator(tf.keras.utils.Sequence):
     def __init__(
         self,
-        A_image_paths,
-        B_image_paths,
+        image_paths,
         image_shape,
         batch_size
     ):
         self.batch_size = batch_size
         self.image_shape = image_shape
-        self.A_image_paths = A_image_paths
-        self.B_image_paths = B_image_paths
+        self.image_paths = image_paths
 
     def __len__(self):
         return compute_num_batches(
-            max(len(self.A_image_paths), len(self.B_image_paths)),
+            max(
+                len(self.image_paths[domain])
+                for domain in config.DOMAINS
+            ),
             self.batch_size
         )
 
     def __getitem__(self, idx):
-        A_image_paths_batch = get_batch(
-            idx, self.batch_size, self.A_image_paths, len(self.B_image_paths)
-        )
-        B_image_paths_batch = get_batch(
-            idx, self.batch_size, self.B_image_paths, len(self.A_image_paths)
-        )
-        return {
-            'A_image_paths': A_image_paths_batch,
-            'B_image_paths': B_image_paths_batch,
-            'A_images': create_image_array(
-                A_image_paths_batch, self.image_shape
-            ),
-            'B_images': create_image_array(
-                B_image_paths_batch, self.image_shape
-            ),
+        batch = {
+            'image_paths': {},
+            'images': {}
         }
+        for domain, other in config.DOMAIN_PAIRS:
+            batch['image_paths'][domain] = get_batch(
+                idx,
+                self.batch_size,
+                self.image_paths[domain],
+                len(self.image_paths[other])
+            )
+            batch['images'][domain] = create_image_array(
+                batch['image_paths'][domain], self.image_shape
+            )
+        return batch
 
 
 def get_batch(
@@ -199,7 +201,7 @@ def load_weights_for_model(model, result_paths_saved_models):
         raise FileNotFoundError(f"{result_paths_saved_models} does not exist.")
     path_to_weights = sorted(
         result_paths_saved_models.glob(f'{model.name}_weights_epoch_*.hdf5')
-    )[-1]  # Load last available weights.
+    )[-1]  # Load last availdomainle weights.
     logging.info("Loading weights from %s.", path_to_weights)
     model.load_weights(str(path_to_weights))
 

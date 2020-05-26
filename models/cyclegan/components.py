@@ -218,7 +218,8 @@ class ImagePool():
                 else:
                     return_images = np.vstack((return_images, image))
 
-            else:  # 50% chance that we replace an old synthetic image
+            else:
+                # 50% chance that we return and replace an old synthetic image
                 p = random.uniform(0, 1)
                 if p > 0.5:
                     random_id = random.randint(0, self.pool_size - 1)

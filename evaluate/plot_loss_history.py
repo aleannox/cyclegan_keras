@@ -8,6 +8,13 @@ import scipy.signal
 import config
 
 
+FILTER_FS = 1000
+FILTER_CUTOFF = 2
+FILTER_ORDER = 6
+RAW_ALPHA = 0.2
+DOMAIN_COLORS = dict(zip(config.DOMAINS, ('red', 'blue')))
+
+
 def butter_lowpass(cutoff, fs, order=5):
     nyq = 0.5 * fs
     normal_cutoff = cutoff / nyq
@@ -23,7 +30,8 @@ def butter_lowpass_filter(data, cutoff, fs, order=5):
 
 def plot_losses(
     model_key,
-    epochs=None,
+    min_epoch=1,
+    max_epoch=None,
     point_gap=1,
     figsize=(20, 7)
 ):
@@ -37,97 +45,84 @@ def plot_losses(
     ).open('rb') as file:
         losses = pickle.load(file)
 
-    if epochs:
-        num_points_max = epochs * meta_data['num_train_images_max']
-    else:
-        num_points_max = len(losses['D_A'])
+    num_points_min = min_epoch * meta_data['num_train_images_max']
+    num_points_max = len(losses['G'])
+    if max_epoch:
+        num_points_max = min(
+            num_points_max,
+            max_epoch * meta_data['num_train_images_max']
+        )
 
     # Calculate interesting things to plot
-    D_A_losses = np.array(losses['D_A'])[:num_points_max]
-    D_B_losses = np.array(losses['D_B'])[:num_points_max]
-    G_A_losses = (
-        np.array(losses['G_A_D_synthetic']) +
-        np.array(losses['G_A_reconstructed'])
-    )[:num_points_max]
-    G_B_losses = (
-        np.array(losses['G_B_D_synthetic']) +
-        np.array(losses['G_B_reconstructed'])
-    )[:num_points_max]
-    R_A_losses = np.array(losses['G_A_reconstructed'])[:num_points_max]
-    R_B_losses = np.array(losses['G_B_reconstructed'])[:num_points_max]
+    plot_data = {}
+    for domain in config.DOMAINS:
+        plot_data[f'D_{domain}'] = np.array(losses[f'D_{domain}'])
+        plot_data[f'G_{domain}'] = np.array(losses[f'G_{domain}'])
+        plot_data[f'R_{domain}'] = np.array(losses[f'G_{domain}_reconstructed'])
+    plot_data['D'] = np.array(losses['D'])
+    plot_data['G'] = np.array([x['loss'] for x in losses['G']])
+    plot_data['R'] = sum(
+        plot_data[f'R_{domain}'] for domain in config.DOMAINS
+    )
 
-    G_losses = np.array([x['loss'] for x in losses['G']])[:num_points_max]
-    D_losses = np.array(losses['D'])[:num_points_max]
-    reconstruction_losses = R_A_losses + R_B_losses
-
-    points = range(0, len(G_losses), point_gap)
-    fs = 1000
-    cutoff = 2
-    order = 6
-    raw_alpha = 0.2
+    points = range(num_points_min, num_points_max, point_gap)
 
     # Lowpass filter
-    G_A_raw = G_A_losses[points]
-    G_A = butter_lowpass_filter(G_A_raw, cutoff, fs, order)
-    G_B_raw = G_B_losses[points]
-    G_B = butter_lowpass_filter(G_B_raw, cutoff, fs, order)
+    for kind in ['D', 'G', 'R']:
+        for variant in (None,) + config.DOMAINS:
+            key = f'{kind}_{variant}' if variant else kind
+            try:
+                plot_data[f'{key}_raw'] = plot_data[key][points]
+                plot_data[f'{key}_filtered'] = butter_lowpass_filter(
+                    plot_data[key], FILTER_CUTOFF, FILTER_FS, FILTER_ORDER
+                )[points]
+            except IndexError:
+                print(key)
+                print(points)
+                print(plot_data[key])
+                raise
 
-    D_A_raw = D_A_losses[points]
-    D_A = butter_lowpass_filter(D_A_raw, cutoff, fs, order)
-    D_B_raw = D_B_losses[points]
-    D_B = butter_lowpass_filter(D_B_raw, cutoff, fs, order)
+    x = np.array(points) / meta_data['num_train_images_max'] + min_epoch
 
-    R_A_raw = R_A_losses[points]
-    R_A = butter_lowpass_filter(R_A_raw, cutoff, fs, order)
-    R_B_raw = R_A_losses[points]
-    R_B = butter_lowpass_filter(R_B_raw, cutoff, fs, order)
-
-    G_raw = G_losses[points]
-    G = butter_lowpass_filter(G_raw, cutoff, fs, order)
-    D_raw = D_losses[points]
-    D = butter_lowpass_filter(D_raw, cutoff, fs, order)
-    R_raw = reconstruction_losses[points]
-    R = butter_lowpass_filter(R_raw, cutoff, fs, order)
-
-    x = np.array(points) / meta_data['num_train_images_max']
+    def plot_kind(kind, ax):
+        for domain, color in DOMAIN_COLORS.items():
+            ax.plot(
+                x, plot_data[f'{kind}_{domain}_filtered'],
+                label=f'{domain} filtered', c=color
+            )
+            ax.plot(
+                x, plot_data[f'{kind}_{domain}_raw'],
+                label=f'{domain}', alpha=RAW_ALPHA, c=color
+            )
+        ax.set_xlabel('epoch')
+        ax.set_ylabel(f'{kind} losses')
+        ax.legend()
 
     _, axs = plt.subplots(2, 2, figsize=figsize)
 
     ax = axs[0][0]
-    ax.plot(x, G_A, label='G_A filtered', c='red')
-    ax.plot(x, G_B, label='G_B filtered', c='blue')
-    ax.plot(x, G_A_raw, label='G_A', alpha=raw_alpha, c='red')
-    ax.plot(x, G_B_raw, label='G_B', alpha=raw_alpha, c='blue')
-    ax.set_xlabel('epochs')
-    ax.set_ylabel('generator losses')
-    ax.legend()
+    plot_kind('G', ax)
 
     ax = axs[0][1]
-    ax.plot(x, D_A, label='D_A filtered', c='red')
-    ax.plot(x, D_B, label='D_B filtered', c='blue')
-    ax.plot(x, D_A_raw, label='D_A', alpha=raw_alpha, c='red')
-    ax.plot(x, D_B_raw, label='D_B', alpha=raw_alpha, c='blue')
-    ax.set_xlabel('epochs')
-    ax.set_ylabel('discriminator losses')
-    ax.legend()
+    plot_kind('D', ax)
 
     ax = axs[1][0]
-    ax.plot(x, R_A, label='A filtered', c='red')
-    ax.plot(x, R_B, label='B filtered', c='blue')
-    ax.plot(x, R_A_raw, label='A', alpha=raw_alpha, c='red')
-    ax.plot(x, R_B_raw, label='B', alpha=raw_alpha, c='blue')
-    ax.set_xlabel('epochs')
-    ax.set_ylabel('reconstruction losses')
-    ax.legend()
+    plot_kind('R', ax)
 
     ax = axs[1][1]
-    ax.plot(x, G, label='G filtered', c='red')
-    ax.plot(x, D, label='D filtered', c='blue')
-    ax.plot(x, R, label='reconstruction filtered', c='green')
-    ax.plot(x, G_raw, label='G', alpha=raw_alpha, c='red')
-    ax.plot(x, D_raw, label='D', alpha=raw_alpha, c='blue')
-    ax.plot(x, R_raw, label='reconstruction', alpha=raw_alpha, c='green')
-    ax.set_xlabel('epochs')
+    for kind, color in zip(
+        ('G', 'D', 'R'),
+        ('red', 'blue', 'green')
+    ):
+        ax.plot(
+            x, plot_data[f'{kind}_filtered'],
+            label=f'{kind} filtered', c=color
+        )
+        ax.plot(
+            x, plot_data[f'{kind}_raw'],
+            label=kind, c=color, alpha=RAW_ALPHA
+        )
+    ax.set_xlabel('epoch')
     ax.set_ylabel('losses')
     ax.legend()
 

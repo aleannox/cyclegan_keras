@@ -42,7 +42,10 @@ if __name__ == '__main__':
         use_auto_mixed_precision=arguments.use_auto_mixed_precision
     )
 
-    model = models.cyclegan.CycleGAN(model_config)
-    model.load_generator_weights(arguments.model_key)
-    model.prepare_data()
-    model.generate_synthetic_images()
+    try:
+        model = models.cyclegan.CycleGAN(model_config)
+        model.load_generator_weights(arguments.model_key)
+        model.prepare_data()
+        model.generate_synthetic_images()
+    except KeyboardInterrupt:
+        logging.info("Aborting generation.")

@@ -34,6 +34,9 @@ if __name__ == '__main__':
         use_auto_mixed_precision=arguments.use_auto_mixed_precision
     )
 
-    model = models.cyclegan.CycleGAN(model_config)
-    model.prepare_data()
-    model.train()
+    try:
+        model = models.cyclegan.CycleGAN(model_config)
+        model.prepare_data()
+        model.train()
+    except KeyboardInterrupt:
+        logging.info("Aborting training.")

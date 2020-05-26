@@ -22,6 +22,8 @@ NORMALIZATIONS = {
     'instance_normalization': tensorflow_addons.layers.InstanceNormalization
 }
 
+DOMAINS = ('A', 'B')
+DOMAIN_PAIRS = tuple(zip(DOMAINS, DOMAINS[::-1]))
 
 @dataclasses.dataclass
 class StaticPaths:
@@ -44,23 +46,27 @@ class ResultPaths:
     base: pathlib.Path
     saved_models: pathlib.Path = dataclasses.field(init=False)
     examples_history: pathlib.Path = dataclasses.field(init=False)
-    examples_history_train_A: pathlib.Path = dataclasses.field(init=False)
-    examples_history_train_B: pathlib.Path = dataclasses.field(init=False)
-    examples_history_test_A: pathlib.Path = dataclasses.field(init=False)
-    examples_history_test_B: pathlib.Path = dataclasses.field(init=False)
-    generated_synthetic_A_images: pathlib.Path = dataclasses.field(init=False)
-    generated_synthetic_B_images: pathlib.Path = dataclasses.field(init=False)
+    examples_history_train: typing.Dict[str, pathlib.Path] \
+        = dataclasses.field(init=False)
+    examples_history_test: typing.Dict[str, pathlib.Path] \
+        = dataclasses.field(init=False)
+    generated_synthetic_images: typing.Dict[str, pathlib.Path] \
+        = dataclasses.field(init=False)
     def __post_init__(self):
         self.saved_models = self.base / 'saved_models'
         self.examples_history = self.base / 'examples_history'
-        self.examples_history_train_A = self.examples_history / 'train_A'
-        self.examples_history_train_B = self.examples_history / 'train_B'
-        self.examples_history_test_A = self.examples_history / 'test_A'
-        self.examples_history_test_B = self.examples_history / 'test_B'
-        self.generated_synthetic_A_images = \
-            self.base / 'generated_synthetic_images' / 'A'
-        self.generated_synthetic_B_images = \
-            self.base / 'generated_synthetic_images' / 'B'
+        self.examples_history_train = {
+            domain: self.examples_history / f'train_{domain}'
+            for domain in DOMAINS
+        }
+        self.examples_history_test = {
+            domain: self.examples_history / f'test_{domain}'
+            for domain in DOMAINS
+        }
+        self.generated_synthetic_images = {
+            domain: self.base / 'generated_synthetic_images' / domain
+            for domain in DOMAINS
+        }
 
 
 def construct_result_paths(model_key=None, create_dirs=False):
@@ -71,8 +77,12 @@ def construct_result_paths(model_key=None, create_dirs=False):
         data={'base': STATIC_PATHS.results / model_key}
     )
     if create_dirs:
-        for path in result_paths.__dict__.values():
-            path.mkdir(exist_ok=True, parents=True)
+        for path_or_path_dict in result_paths.__dict__.values():
+            if isinstance(path_or_path_dict, pathlib.Path):
+                path_or_path_dict.mkdir(exist_ok=True, parents=True)
+            else:
+                for path in path_or_path_dict.values():
+                    path.mkdir(exist_ok=True, parents=True)
     return result_paths
 
 
