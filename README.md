@@ -11,8 +11,9 @@ Changes after forking:
 
 TODO:
 - Add autoencoder.
-- Add TensorBoard callbacks. 
-  
+- Add TensorBoard callbacks.
+- Reduce model class state AND class method arguments, probably hopeless.
+
 
 ## Setup project
 
@@ -65,7 +66,9 @@ This example reflects the hyperparameters used in the CycleGAN paper.
     "epochs": 200,
     "batch_size": 1,
     # Save examples each nth epoch
-    "save_interval_samples": 1,
+    "save_interval_examples": 1,
+    # Save temporary examples each nth batch
+    "save_interval_temporary_examples": 20,
     # Save model each nth epoch
     "save_interval_model": 5,
     # Normalization layer, currently only "instance_normalization".
@@ -130,7 +133,7 @@ Results of model training are stored at various intervals in `data/results/<MODE
 where `<MODEL_KEY>` is the timestamp at the start of training.  
 The results stored are
 - training configuration and metadata in `data/results/<MODEL_KEY>/meta_data.json`
-- training losses in `data/results/<MODEL_KEY>/loss_output.csv`
+- training losses in `data/results/<MODEL_KEY>/losses_history.pickle`
 - model architectures and weights in `data/results/<MODEL_KEY>/saved_models/`
 - generated examples in `data/results/<MODEL_KEY>/examples_history/`
 

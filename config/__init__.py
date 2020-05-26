@@ -83,7 +83,8 @@ class ModelConfig:
     use_data_generator: bool
     epochs: int
     batch_size: int
-    save_interval_samples: int
+    save_interval_examples: int
+    save_interval_temporary_examples: int
     save_interval_model: int
     normalization: str
     lambda_ABA: float

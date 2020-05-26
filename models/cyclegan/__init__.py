@@ -33,7 +33,7 @@ class CycleGAN():
         self.losses = None
         self.epoch = None
         self.learning_rate_decrements = None
-        self.progress_bar = None
+        self.epoch_progress_bar = None
 
     def prepare_optimizers(self):
         self.optimizer_D = tf.keras.optimizers.Adam(
@@ -111,72 +111,100 @@ class CycleGAN():
             **generator_args, name='G_B2A'
         )
         if self.config.use_identity_learning:
-            self.G_A2B.compile(optimizer=self.optimizer_G, loss=tf.keras.losses.mae)
-            self.G_B2A.compile(optimizer=self.optimizer_G, loss=tf.keras.losses.mae)
+            self.G_A2B.compile(
+                optimizer=self.optimizer_G, loss=tf.keras.losses.mae
+            )
+            self.G_B2A.compile(
+                optimizer=self.optimizer_G, loss=tf.keras.losses.ma
+            )
 
     def prepare_full_model(self):
-        # Inputs and intermediates.
+        # Inputs
         real_A = tf.keras.Input(shape=self.config.image_shape, name='real_A')
         real_B = tf.keras.Input(shape=self.config.image_shape, name='real_B')
-        synthetic_B = self.G_A2B(real_A)
-        synthetic_A = self.G_B2A(real_B)
-        D_A_guess_synthetic = self.D_A_static(synthetic_A)
-        D_B_guess_synthetic = self.D_B_static(synthetic_B)
-        reconstructed_A = self.G_B2A(synthetic_B)
-        reconstructed_B = self.G_A2B(synthetic_A)
 
-        # Outputs.
-        model_outputs = [
-            reconstructed_A,  # Generator A -> B -> A
-            reconstructed_B,  # Generator B -> A -> B
+        # Output candidates, wrapped in identities for renaming.
+        synthetic_B = util.identity_layer('synthetic_B')(self.G_A2B(real_A))
+        synthetic_A = util.identity_layer('synthetic_A')(self.G_B2A(real_B))
+        if self.config.use_multiscale_discriminator:
+            D_A_guess_synthetic = []
+            D_B_guess_synthetic = []
+            for i in range(2):
+                D_A_guess_synthetic.append(
+                    util.identity_layer(f'D_A_guess_synthetic_{i}')(
+                        self.D_A_static(synthetic_A)[i]
+                    )
+                )
+                D_B_guess_synthetic.append(
+                    util.identity_layer(f'D_B_guess_synthetic_{i}')(
+                        self.D_B_static(synthetic_B)[i]
+                    )
+                )
+        else:
+            D_A_guess_synthetic = util.identity_layer('D_A_guess_synthetic')(
+                self.D_A_static(synthetic_A)
+            )
+            D_B_guess_synthetic = util.identity_layer('D_B_guess_synthetic')(
+                self.D_B_static(synthetic_B)
+            )
+        reconstructed_A = \
+            util.identity_layer('reconstructed_A')(self.G_B2A(synthetic_B))
+        reconstructed_B = \
+            util.identity_layer('reconstructed_B')(self.G_A2B(synthetic_A))
+
+        # Outputs, losses, weights.
+
+        # Cyclic generators
+        outputs = [
+            reconstructed_A,  # A -> B -> A
+            reconstructed_B,  # A -> B -> A
         ]
+        losses = {
+            'reconstructed_A': tf.keras.losses.mae,
+            'reconstructed_B': tf.keras.losses.mae
+        }
+        loss_weights = {
+            'reconstructed_A': self.config.lambda_ABA,
+            'reconstructed_B': self.config.lambda_BAB
+        }
+
         # Discriminators A, B
         if self.config.use_multiscale_discriminator:
             for i in range(2):
-                model_outputs.append(D_A_guess_synthetic[i])
-                model_outputs.append(D_B_guess_synthetic[i])
+                outputs.append(D_A_guess_synthetic[i])
+                outputs.append(D_B_guess_synthetic[i])
+                losses[f'D_A_guess_synthetic_{i}'] = \
+                    tf.keras.losses.mse
+                losses[f'D_B_guess_synthetic_{i}'] = \
+                    tf.keras.losses.mse
+                loss_weights[f'D_A_guess_synthetic_{i}'] = self.config.lambda_D
+                loss_weights[f'D_B_guess_synthetic_{i}'] = self.config.lambda_D
         else:
-            model_outputs.append(D_A_guess_synthetic)
-            model_outputs.append(D_B_guess_synthetic)
-        # Supervised individual generators B -> A, A -> B
-        if self.config.use_supervised_learning:
-            model_outputs.append(synthetic_A)
-            model_outputs.append(synthetic_B)
+            outputs.append(D_A_guess_synthetic)
+            outputs.append(D_B_guess_synthetic)
+            losses['D_A_guess_synthetic'] = tf.keras.losses.mse
+            losses['D_B_guess_synthetic'] = tf.keras.losses.mse
+            loss_weights['D_A_guess_synthetic'] = self.config.lambda_D
+            loss_weights['D_B_guess_synthetic'] = self.config.lambda_D
 
-        # Losses with weights.
-        compile_losses = [
-            tf.keras.losses.mae,  # Generator A -> B -> A
-            tf.keras.losses.mae,  # Generator B -> A -> B
-            tf.keras.losses.mse,  # Discriminator A
-            tf.keras.losses.mse,  # Discriminator B
-        ]
-        compile_weights = [
-            self.config.lambda_ABA,  # Generator A -> B -> A
-            self.config.lambda_BAB,  # Generator A -> B -> A
-            self.config.lambda_D,  # Discriminator A
-            self.config.lambda_D,  # Discriminator B
-        ]
-        # Discriminators A, B
-        if self.config.use_multiscale_discriminator:
-            for _ in range(2):
-                compile_losses.append(tf.keras.losses.mse)
-                compile_weights.append(self.config.lambda_D)
         # Supervised individual generators B -> A, A -> B
         if self.config.use_supervised_learning:
-            compile_losses.append(tf.keras.losses.mae)
-            compile_losses.append(tf.keras.losses.mae)
-            compile_weights.append(self.config.supervised_learning_weight)
-            compile_weights.append(self.config.supervised_learning_weight)
+            outputs.append(synthetic_A)
+            outputs.append(synthetic_B)
+            losses['synthetic_A'] = tf.keras.losses.mae
+            losses['synthetic_B'] = tf.keras.losses.mae
+            loss_weights['synthetic_A'] = self.config.supervised_learning_weight
+            loss_weights['synthetic_B'] = self.config.supervised_learning_weight
 
         self.G = tf.keras.Model(
             inputs=[real_A, real_B],
-            outputs=model_outputs,
+            outputs=outputs,
             name='G'
         )
         self.G.compile(
             optimizer=self.optimizer_G,
-            loss=compile_losses,
-            loss_weights=compile_weights
+            loss=losses,
+            loss_weights=loss_weights
         )
 
     def prepare_data(self):
@@ -253,26 +281,24 @@ class CycleGAN():
         if self.config.use_linear_lr_decay:
             self.calculate_learning_rate_decrements()
 
-        self.progress_bar = tqdm.tqdm(
+        self.epoch_progress_bar = tqdm.tqdm(
             range(1, self.config.epochs + 1),
             unit='epoch'
         )
-        for epoch in self.progress_bar:
+        for epoch in self.epoch_progress_bar:
             self.epoch = epoch
             if self.config.use_data_generator:
                 self.run_data_generator_training_epoch()
             else:
                 self.run_ram_training_epoch()
-            self.progress_bar.set_postfix(**self.mean_epoch_losses())
-            self.maybe_save_results()
+            self.handle_epoch_callbacks()
 
     def run_data_generator_training_epoch(self):
-        for batch_index, batch in enumerate(
-            tqdm.tqdm(
-                self.data['train_batch_generator'],
-                unit='batch'
-            )
-        ):
+        batch_progress_bar = tqdm.tqdm(
+            self.data['train_batch_generator'],
+            unit='batch'
+        )
+        for batch_index, batch in enumerate(batch_progress_bar):
             self.run_batch_training_iteration(batch_index, batch)
 
     def run_ram_training_epoch(self):
@@ -288,9 +314,10 @@ class CycleGAN():
                 len(self.data['train_B_images']),
                 size=len(self.data['train_B_images'])
             )
-        for batch_index in tqdm.trange(
+        batch_progress_bar = tqdm.trange(
             self.data['num_train_batches'], unit='batch'
-        ):
+        )
+        for batch_index in batch_progress_bar:
             A_batch = models.io.get_batch(
                 batch_index,
                 self.config.batch_size,
@@ -313,14 +340,48 @@ class CycleGAN():
         real_A_images = batch['A_images']
         real_B_images = batch['B_images']
 
-        # Discriminator training
-        # Generate batch of synthetic images
+        D_A_loss, D_B_loss = self.run_batch_training_iteration_discriminator(
+            batch_index, real_A_images, real_B_images
+        )
+
+        (
+            G_loss,
+            G_A_D_loss_synthetic, G_B_D_loss_synthetic,
+            reconstruction_loss_A, reconstruction_loss_B
+        ) = self.run_batch_training_iteration_generator(
+            real_A_images, real_B_images
+        )
+
+        G_A2B_identity_loss, G_B2A_identity_loss = \
+            self.run_batch_training_iteration_identity(
+                batch_index, real_A_images, real_B_images
+            )
+        
+        self.record_losses(
+            D_A_loss, D_B_loss,
+            G_loss,
+            G_A_D_loss_synthetic, G_B_D_loss_synthetic,
+            reconstruction_loss_A, reconstruction_loss_B,
+            G_A2B_identity_loss, G_B2A_identity_loss
+        )
+
+        self.maybe_update_learning_rates()
+
+    def run_batch_training_iteration_discriminator(
+        self, batch_index, real_A_images, real_B_images
+    ):
         synthetic_B_images = self.G_A2B.predict(real_A_images)
         synthetic_A_images = self.G_B2A.predict(real_B_images)
         synthetic_A_images = \
             self.data['synthetic_pool_A'].query(synthetic_A_images)
         synthetic_B_images = \
             self.data['synthetic_pool_B'].query(synthetic_B_images)
+
+        if batch_index % self.config.save_interval_temporary_examples == 0:
+            self.save_temporary_example_images(
+                real_A_images, real_B_images,
+                synthetic_A_images, synthetic_B_images
+            )
 
         for _ in range(self.config.discriminator_iterations):
             D_A_loss_real = self.D_A.train_on_batch(
@@ -345,49 +406,103 @@ class CycleGAN():
             else:
                 D_A_loss = D_A_loss_real + D_A_loss_synthetic
                 D_B_loss = D_B_loss_real + D_B_loss_synthetic
-            D_loss = D_A_loss + D_B_loss
+        return D_A_loss, D_B_loss
 
-        # Generator training
-        # Compare reconstructed images to real images
-        target_data = [real_A_images, real_B_images]
+    def run_batch_training_iteration_generator(
+        self, real_A_images, real_B_images
+    ):
+        x = {
+            'real_A': real_A_images,
+            'real_B': real_B_images,
+        }
+        y = {
+            'reconstructed_A': real_A_images,
+            'reconstructed_B': real_B_images,
+        }
         if self.config.use_multiscale_discriminator:
             for i in range(2):
-                target_data.append(
+                y['D_A_guess_synthetic_{i}'] = \
                     self.data['positive_discriminator_labels'][i]
-                )
-                target_data.append(
+                y['D_B_guess_synthetic_{i}'] = \
                     self.data['positive_discriminator_labels'][i]
-                )
         else:
-            target_data.append(self.data['positive_discriminator_labels'])
-            target_data.append(self.data['positive_discriminator_labels'])
-
+            y['D_A_guess_synthetic'] = \
+                self.data['positive_discriminator_labels']
+            y['D_B_guess_synthetic'] = \
+                self.data['positive_discriminator_labels']
         if self.config.use_supervised_learning:
-            target_data.append(real_A_images)
-            target_data.append(real_B_images)
+            y['synthetic_A'] = real_A_images
+            y['synthetic_B'] = real_B_images
 
         for _ in range(self.config.generator_iterations):
-            G_loss = self.G.train_on_batch(
-                x=[real_A_images, real_B_images],
-                y=target_data
-            )
+            G_loss = self.G.train_on_batch(x=x, y=y, return_dict=True)
 
-        G_A_D_loss_synthetic = G_loss[1]
-        G_B_D_loss_synthetic = G_loss[2]
-        reconstruction_loss_A = G_loss[3]
-        reconstruction_loss_B = G_loss[4]
+        if self.config.use_multiscale_discriminator:
+            G_A_D_loss_synthetic = []
+            G_B_D_loss_synthetic = []
+            for i in range(2):
+                G_A_D_loss_synthetic.append(
+                    G_loss['D_A_guess_synthetic_{i}_loss']
+                )
+                G_B_D_loss_synthetic.append(
+                    G_loss['D_B_guess_synthetic_{i}_loss']
+                )
+        else:
+            G_A_D_loss_synthetic = G_loss['D_A_guess_synthetic_loss']
+            G_B_D_loss_synthetic = G_loss['D_B_guess_synthetic_loss']
+        reconstruction_loss_A = G_loss['reconstructed_A_loss']
+        reconstruction_loss_B = G_loss['reconstructed_B_loss']
 
-        # Identity training
+        return (
+            G_loss,
+            G_A_D_loss_synthetic, G_B_D_loss_synthetic,
+            reconstruction_loss_A, reconstruction_loss_B
+        )
+
+    def run_batch_training_iteration_identity(
+        self, batch_index, real_A_images, real_B_images
+    ):
         if (
             self.config.use_identity_learning and
             batch_index % self.config.identity_learning_modulus == 0
         ):
             G_A2B_identity_loss = self.G_A2B.train_on_batch(
-                x=real_B_images, y=real_B_images)
+                x=real_B_images, y=real_B_images
+            )
             G_B2A_identity_loss = self.G_B2A.train_on_batch(
-                x=real_A_images, y=real_A_images)
+                x=real_A_images, y=real_A_images
+            )
+        else:
+            G_A2B_identity_loss, G_B2A_identity_loss = None, None
+        return G_A2B_identity_loss, G_B2A_identity_loss
 
-        # Update learning rates
+    def record_losses(
+        self,
+        D_A_loss, D_B_loss,
+        G_loss,
+        G_A_D_loss_synthetic, G_B_D_loss_synthetic,
+        reconstruction_loss_A, reconstruction_loss_B,
+        G_A2B_identity_loss, G_B2A_identity_loss
+    ):
+        self.losses['D_A'].append(D_A_loss)
+        self.losses['D_B'].append(D_B_loss)
+        self.losses['G_A_D_synthetic'].append(G_A_D_loss_synthetic)
+        self.losses['G_B_D_synthetic'].append(G_B_D_loss_synthetic)
+        self.losses['G_A_reconstructed'].append(reconstruction_loss_A)
+        self.losses['G_B_reconstructed'].append(reconstruction_loss_B)
+        G_A_loss = G_A_D_loss_synthetic + reconstruction_loss_A
+        G_B_loss = G_B_D_loss_synthetic + reconstruction_loss_B
+        self.losses['D'].append(D_A_loss + D_B_loss)
+        self.losses['G_A'].append(G_A_loss)
+        self.losses['G_B'].append(G_B_loss)
+        self.losses['G'].append(G_loss)
+        reconstruction_loss = reconstruction_loss_A + reconstruction_loss_B
+        self.losses['reconstruction'].append(reconstruction_loss)
+        if self.config.use_identity_learning:
+            self.losses['G_A2B_identity'].append(G_A2B_identity_loss)
+            self.losses['G_B2A_identity'].append(G_B2A_identity_loss)
+
+    def maybe_update_learning_rates(self):
         if (
             self.config.use_linear_lr_decay and
             self.epoch > self.config.linear_lr_decay_epoch_start
@@ -402,39 +517,13 @@ class CycleGAN():
                 self.G, self.learning_rate_decrements['G']
             )
 
-        # Store training data
-        self.losses['D_A'].append(D_A_loss)
-        self.losses['D_B'].append(D_B_loss)
-        self.losses['G_A_D_synthetic'].append(G_A_D_loss_synthetic)
-        self.losses['G_B_D_synthetic'].append(G_B_D_loss_synthetic)
-        self.losses['G_A_reconstructed'].append(reconstruction_loss_A)
-        self.losses['G_B_reconstructed'].append(reconstruction_loss_B)
-        GA_loss = G_A_D_loss_synthetic + reconstruction_loss_A
-        GB_loss = G_B_D_loss_synthetic + reconstruction_loss_B
-        self.losses['D'].append(D_loss)
-        self.losses['G_A'].append(GA_loss)
-        self.losses['G_B'].append(GB_loss)
-        self.losses['G'].append(G_loss)
-        reconstruction_loss = reconstruction_loss_A + reconstruction_loss_B
-        self.losses['reconstruction'].append(reconstruction_loss)
-        if self.config.use_identity_learning:
-            self.losses['G_A2B_identity'].append(G_A2B_identity_loss)
-            self.losses['G_B2A_identity'].append(G_B2A_identity_loss)
-
-        if batch_index % 20 == 0:
-            # Save temporary images continously
-            self.save_temporary_example_images(
-                real_A_images, real_B_images,
-                synthetic_A_images, synthetic_B_images
-            )
-
     def mean_epoch_losses(self):
         if self.losses['D']:
             D_loss_mean = np.mean(
                 self.losses['D'][-self.data['num_train_batches']:]
             )
             G_loss_mean = np.mean([
-                x[0]
+                x['loss']
                 for x in self.losses['G'][-self.data['num_train_batches']:]
             ])
             reconstruction_loss_mean = np.mean(
@@ -454,8 +543,10 @@ class CycleGAN():
                 'DB': D_B_loss_mean
             }
 
-    def maybe_save_results(self):
-        if self.epoch % self.config.save_interval_samples == 0:
+    def handle_epoch_callbacks(self):
+        epoch_progressbar_postfix = self.mean_epoch_losses()
+
+        if self.epoch % self.config.save_interval_examples == 0:
             self.save_example_images()
 
         if self.epoch % self.config.save_interval_model == 0:
@@ -463,20 +554,13 @@ class CycleGAN():
                 models.io.save_model(
                     model, self.epoch, self.result_paths.saved_models
                 )
-            self.progress_bar.set_postfix(info="Models saved.")
+            # Cheap way to output custom information without interfering
+            # with the progress bars.
+            epoch_progressbar_postfix['z'] = "Models saved."
 
-        training_history = {
-            'D_A_losses': self.losses['D_A'],
-            'D_B_losses': self.losses['D_B'],
-            'G_A_D_losses_synthetic': self.losses['G_A_D_synthetic'],
-            'G_B_D_losses_synthetic': self.losses['G_B_D_synthetic'],
-            'G_A_losses_reconstructed': self.losses['G_A_reconstructed'],
-            'G_B_losses_reconstructed': self.losses['G_B_reconstructed'],
-            'D_losses': self.losses['D'],
-            'G_losses': self.losses['G'],
-            'reconstruction_losses': self.losses['reconstruction']
-        }
-        models.io.save_losses(training_history, self.result_paths.base)
+        models.io.save_losses(self.losses, self.result_paths.base)
+
+        self.epoch_progress_bar.set_postfix(**epoch_progressbar_postfix)
 
     def save_example_images(self):
         for train_or_test in ['train', 'test']:

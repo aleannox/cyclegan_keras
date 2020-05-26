@@ -79,6 +79,11 @@ class ReflectionPadding2D(tf.keras.layers.Layer):
         return super().get_config()
 
 
+def identity_layer(name):
+    "Identity layer - used for renaming."
+    return tf.keras.layers.Lambda(lambda x: x, name=name)
+
+
 def update_learning_rate(model, decrement):
     new_lr = max(
         tf.keras.backend.get_value(model.optimizer.lr) - decrement,

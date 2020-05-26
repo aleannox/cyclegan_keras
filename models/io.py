@@ -1,9 +1,9 @@
 "Model-agnostic IO."
 
 
-import csv
 import json
 import logging
+import pickle
 import math
 import random
 
@@ -189,12 +189,9 @@ def save_metadata(data, result_paths_base):
         )
 
 
-def save_losses(history, result_paths_base):
-    keys = sorted(history.keys())
-    with (result_paths_base / 'loss_output.csv').open('w') as csv_file:
-        writer = csv.writer(csv_file, delimiter=',')
-        writer.writerow(keys)
-        writer.writerows(zip(*[history[key] for key in keys]))
+def save_losses(losses, result_paths_base):
+    with (result_paths_base / 'losses_history.pickle').open('wb') as file:
+        pickle.dump(losses, file)
 
 
 def load_weights_for_model(model, result_paths_saved_models):
