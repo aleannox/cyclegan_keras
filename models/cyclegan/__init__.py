@@ -492,7 +492,7 @@ class CycleGAN():
                         reconstructed_images[i],
                         self.result_paths.__dict__[
                             f'examples_history_{train_or_test}'
-                        ][domain] / f'epoch{self.epoch:04d}_example{i}.png'
+                        ][domain] / f'epoch{self.epoch:04d}_example{i}.jpg'
                     )
 
     def save_temporary_example_images(self, real_images, synthetic_images):
@@ -501,17 +501,21 @@ class CycleGAN():
             reconstructed_images[domain] = \
                 self.G_single[domain].predict(synthetic_images[other])
 
-        real_images_stacked = np.vstack(tuple(real_images.values()))
-        synthetic_images_stacked = \
-            np.vstack(tuple(synthetic_images.values())[::-1])
-        reconstructed_images_stacked = \
-            np.vstack(tuple(reconstructed_images.values()))
+        real_images_stacked = np.vstack(
+            tuple(images[0] for images in real_images.values())
+        )
+        synthetic_images_stacked = np.vstack(
+            tuple(images[0] for images in synthetic_images.values())[::-1]
+        )
+        reconstructed_images_stacked = np.vstack(
+            tuple(images[0] for images in reconstructed_images.values())
+        )
 
         self.save_image_triplet(
             real_images_stacked[0],
             synthetic_images_stacked[0],
             reconstructed_images_stacked[0],
-            self.result_paths.examples_history / 'tmp.png'
+            self.result_paths.examples_history / 'tmp.jpg'
         )
 
     def calculate_learning_rate_decrements(self):
@@ -541,7 +545,9 @@ class CycleGAN():
         image = np.hstack((real, synthetic, reconstructed))
         if self.config.image_shape[-1] == 1:
             image = image[:, :, 0]
-        models.io.pil_image_from_normalized_array(image).save(path_name)
+        models.io.pil_image_from_normalized_array(image).save(
+            path_name, quality=75
+        )
 
     def load_generator_weights(self, model_key):
         self.result_paths = config.construct_result_paths(
@@ -561,7 +567,7 @@ class CycleGAN():
                 for i in range(len(synthetic_images)):
                     save_image(
                         synthetic_images[i],
-                        batch['image_paths'][other][i].stem + '_synthetic.png',
+                        batch['image_paths'][other][i].stem + '_synthetic.jpg',
                         domain
                     )
 
@@ -569,7 +575,8 @@ class CycleGAN():
             if self.config.image_shape[-1] == 1:
                 image = image[:, :, 0]
             models.io.pil_image_from_normalized_array(image).save(
-                self.result_paths.generated_synthetic_images[domain] / name
+                self.result_paths.generated_synthetic_images[domain] / name,
+                quality=75
             )
 
         logging.info("Generating synthetic images for the entire test set.")

@@ -25,6 +25,9 @@ def load_data(model_config):
     # We are currently doing this if using the data generator.
     # The only negative effect of doing so is running image generation multiple
     # times for some images in the generation mode, which is inefficient.
+
+    random.seed(4242)
+
     data = {}
     for tt in ['train', 'test']:
         data[f'{tt}_image_paths'] = {}
