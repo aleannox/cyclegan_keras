@@ -11,8 +11,8 @@ Changes after forking:
 
 TODO:
 - Add autoencoder.
+- Add resume training.
 - Add TensorBoard callbacks.
-- Reduce model class state AND class method arguments, probably hopeless.
 
 
 ## Setup project

@@ -60,8 +60,7 @@ def discriminator(
     else:
         x = tf.keras.layers.Flatten()(x)
         x = tf.keras.layers.Dense(1)(x)
-    # x = tf.keras.layers.Activation('sigmoid')(x)
-    # ^ No sigmoid to avoid near-fp32 machine epsilon discriminator cost.
+    # No sigmoid (LSGAN) to avoid near-fp32 machine epsilon discriminator cost.
     return tf.keras.Model(inputs=input_img, outputs=x, name=name)
 
 

@@ -33,7 +33,9 @@ def plot_losses(
     min_epoch=1,
     max_epoch=None,
     point_gap=1,
-    figsize=(20, 7)
+    figsize=(20, 7),
+    log=False,
+    **plot_kws
 ):
     with (
         config.STATIC_PATHS.results / model_key / 'meta_data.json'
@@ -88,14 +90,18 @@ def plot_losses(
         for domain, color in DOMAIN_COLORS.items():
             ax.plot(
                 x, plot_data[f'{kind}_{domain}_filtered'],
-                label=f'{domain} filtered', c=color
+                label=f'{domain} filtered', c=color,
+                **plot_kws
             )
             ax.plot(
                 x, plot_data[f'{kind}_{domain}_raw'],
-                label=f'{domain}', alpha=RAW_ALPHA, c=color
+                label=f'{domain}', alpha=RAW_ALPHA, c=color,
+                **plot_kws
             )
         ax.set_xlabel('epoch')
         ax.set_ylabel(f'{kind} losses')
+        if log:
+            ax.set_yscale('log')
         ax.legend()
 
     _, axs = plt.subplots(2, 2, figsize=figsize)
@@ -116,12 +122,16 @@ def plot_losses(
     ):
         ax.plot(
             x, plot_data[f'{kind}_filtered'],
-            label=f'{kind} filtered', c=color
+            label=f'{kind} filtered', c=color,
+            **plot_kws
         )
         ax.plot(
             x, plot_data[f'{kind}_raw'],
-            label=kind, c=color, alpha=RAW_ALPHA
+            label=kind, c=color, alpha=RAW_ALPHA,
+            **plot_kws
         )
+        if log:
+            ax.set_yscale('log')
     ax.set_xlabel('epoch')
     ax.set_ylabel('losses')
     ax.legend()
