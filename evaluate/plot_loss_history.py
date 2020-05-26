@@ -15,13 +15,18 @@ def butter_lowpass(cutoff, fs, order=5):
     return b, a
 
 
-def butter_lowpass_filter(data, cutoff, fs, order=5):
+def butter_lowpass_filter(D_Ata, cutoff, fs, order=5):
     b, a = butter_lowpass(cutoff, fs, order=order)
-    y = scipy.signal.lfilter(b, a, data)
+    y = scipy.signal.lfilter(b, a, D_Ata)
     return y
 
 
-def plot_losses(model_key, point_gap=1):
+def plot_losses(
+    model_key,
+    epochs=None,
+    point_gap=1,
+    figsize=(20, 7)
+):
     D_A_losses = []
     D_B_losses = []
     G_A_D_losses_synthetic = []
@@ -55,20 +60,31 @@ def plot_losses(model_key, point_gap=1):
                 G_loss = G_loss.split(',')[0][1:]
             G_losses.append(float(G_loss))
 
-        # Calculate interesting things to plot
-        D_A_losses = np.array(D_A_losses)
-        D_B_losses = np.array(D_B_losses)
-        G_A_losses = np.add(np.array(G_A_D_losses_synthetic), np.array(G_A_losses_reconstructed))
-        G_B_losses = np.add(np.array(G_B_D_losses_synthetic), np.array(G_B_losses_reconstructed))
-        RA_losses = np.array(G_A_losses_reconstructed)
-        RB_losses = np.array(G_B_losses_reconstructed)
+        if epochs:
+            num_points_max = epochs * meta_data['num_train_images_max']
+        else:
+            num_points_max = len(D_A_losses)
 
-        G_losses = np.array(G_losses)
-        D_losses = np.array(D_losses)
-        reconstruction_losses = np.add(
-            np.array(G_A_losses_reconstructed),
+        # Calculate interesting things to plot
+        D_A_losses = np.array(D_A_losses)[:num_points_max]
+        D_B_losses = np.array(D_B_losses)[:num_points_max]
+        G_A_losses = (
+            np.array(G_A_D_losses_synthetic) +
+            np.array(G_A_losses_reconstructed)
+        )[:num_points_max]
+        G_B_losses = (
+            np.array(G_B_D_losses_synthetic) +
             np.array(G_B_losses_reconstructed)
-        )
+        )[:num_points_max]
+        R_A_losses = np.array(G_A_losses_reconstructed)[:num_points_max]
+        R_B_losses = np.array(G_B_losses_reconstructed)[:num_points_max]
+
+        G_losses = np.array(G_losses)[:num_points_max]
+        D_losses = np.array(D_losses)[:num_points_max]
+        reconstruction_losses = (
+            np.array(G_A_losses_reconstructed) +
+            np.array(G_B_losses_reconstructed)
+        )[:num_points_max]
 
     points = range(0, len(G_losses), point_gap)
     fs = 1000
@@ -76,14 +92,14 @@ def plot_losses(model_key, point_gap=1):
     order = 6
 
     # Lowpass filter
-    GA = butter_lowpass_filter(G_A_losses[points], cutoff, fs, order)
-    GB = butter_lowpass_filter(G_B_losses[points], cutoff, fs, order)
+    G_A = butter_lowpass_filter(G_A_losses[points], cutoff, fs, order)
+    G_B = butter_lowpass_filter(G_B_losses[points], cutoff, fs, order)
 
-    DA = butter_lowpass_filter(D_A_losses[points], cutoff, fs, order)
-    DB = butter_lowpass_filter(D_B_losses[points], cutoff, fs, order)
+    D_A = butter_lowpass_filter(D_A_losses[points], cutoff, fs, order)
+    D_B = butter_lowpass_filter(D_B_losses[points], cutoff, fs, order)
 
-    RA = butter_lowpass_filter(RA_losses[points], cutoff, fs, order)
-    RB = butter_lowpass_filter(RB_losses[points], cutoff, fs, order)
+    R_A = butter_lowpass_filter(R_A_losses[points], cutoff, fs, order)
+    R_B = butter_lowpass_filter(R_B_losses[points], cutoff, fs, order)
 
     G = butter_lowpass_filter(G_losses[points], cutoff, fs, order)
     D = butter_lowpass_filter(D_losses[points], cutoff, fs, order)
@@ -91,31 +107,35 @@ def plot_losses(model_key, point_gap=1):
 
     x = np.array(points) / meta_data['num_train_images_max']
 
-    plt.figure(1)
-    plt.plot(x, GA, label='G_A_losses')
-    plt.plot(x, GB, label='G_B_losses')
-    plt.xlabel('epochs')
-    plt.ylabel('generator losses')
-    plt.legend()
+    _, axs = plt.subplots(2, 2, figsize=figsize)
 
-    plt.figure(2)
-    plt.plot(x, DA, label='D_A_losses')
-    plt.plot(x, DB, label='D_B_losses')
-    plt.xlabel('epochs')
-    plt.ylabel('discriminator losses')
-    plt.legend()
+    ax = axs[0][0]
+    ax.plot(x, G_A, label='G_A')
+    ax.plot(x, G_B, label='G_B')
+    ax.set_xlabel('epochs')
+    ax.set_ylabel('generator losses')
+    ax.legend()
 
-    plt.figure(3)
-    plt.plot(x, RA, label='reconstruction_loss_A')
-    plt.plot(x, RB, label='reconstruction_loss_B')
-    plt.xlabel('epochs')
-    plt.ylabel('reconstruction losses')
-    plt.legend()
+    ax = axs[0][1]
+    ax.plot(x, D_A, label='D_A')
+    ax.plot(x, D_B, label='D_B')
+    ax.set_xlabel('epochs')
+    ax.set_ylabel('discriminator losses')
+    ax.legend()
 
-    plt.figure(4)
-    plt.plot(x, G, label='G_losses')
-    plt.plot(x, D, label='D_losses')
-    plt.plot(x, R, label='reconstruction losses')
-    plt.xlabel('epochs')
-    plt.ylabel('losses')
-    plt.legend()
+    ax = axs[1][0]
+    ax.plot(x, R_A, label='A')
+    ax.plot(x, R_B, label='B')
+    ax.set_xlabel('epochs')
+    ax.set_ylabel('reconstruction losses')
+    ax.legend()
+
+    ax = axs[1][1]
+    ax.plot(x, G, label='G')
+    ax.plot(x, D, label='D')
+    ax.plot(x, R, label='reconstruction')
+    ax.set_xlabel('epochs')
+    ax.set_ylabel('losses')
+    ax.legend()
+
+    plt.tight_layout()

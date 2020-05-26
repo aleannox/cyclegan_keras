@@ -32,6 +32,10 @@ pip install -r requirements.txt
 # available in modules which do not reside in the project root folder.
 pip install -e .
 
+# Optional: install graphviz for model inspection, e.g. on Debian/Ubuntu
+# (see https://graphviz.gitlab.io for a different OS)
+sudo apt-get install graphviz
+
 # Optional: install environment as kernel for Jupyter (lab).
 ipython kernel install --name <KERNEL_NAME> --user
 

@@ -5,6 +5,7 @@ import json
 import os
 import pathlib
 
+import IPython.display
 import numpy as np
 import tensorflow as tf
 
@@ -84,3 +85,19 @@ def update_learning_rate(model, decrement):
         0
     )
     tf.keras.backend.set_value(model.optimizer.lr, new_lr)
+
+
+def plot_model_svg(model, **kwargs):
+    """Plot a keras model as SVG in a Jupyter notebook.
+    Useful if you want to rescale the plot with `dpi` while preserving
+    legibility.
+
+    (Almost) drop in replacement for `tensorflow.keras.utils.plot_model`.
+    TODO: Add `to_file` parameter for saving.
+    """
+    return IPython.display.SVG(
+        tf.keras.utils.model_to_dot(
+            model,
+            **kwargs
+        ).create(prog='dot', format='svg')
+    )

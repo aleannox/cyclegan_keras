@@ -68,8 +68,7 @@ def construct_result_paths(model_key=None, create_dirs=False):
         model_key = datetime.datetime.now().isoformat(timespec='seconds')
     result_paths = dacite.from_dict(
         data_class=ResultPaths,
-        data={'base': STATIC_PATHS.results / model_key},
-        config=dacite.Config(type_hooks=CONFIG_CONVERTERS)
+        data={'base': STATIC_PATHS.results / model_key}
     )
     if create_dirs:
         for path in result_paths.__dict__.values():
