@@ -52,6 +52,7 @@ class ResultPaths:
         = dataclasses.field(init=False)
     generated_synthetic_images: typing.Dict[str, pathlib.Path] \
         = dataclasses.field(init=False)
+    tensorboard: pathlib.Path = dataclasses.field(init=False)
     def __post_init__(self):
         self.saved_models = self.base / 'saved_models'
         self.examples_history = self.base / 'examples_history'
@@ -67,6 +68,7 @@ class ResultPaths:
             domain: self.base / 'generated_synthetic_images' / domain
             for domain in DOMAINS
         }
+        self.tensorboard = self.base / 'tensorboard'
 
 
 def construct_result_paths(model_key=None, create_dirs=False):
@@ -131,6 +133,16 @@ class AutoEncoderConfig:
     use_data_generator: bool
     epochs: int
     batch_size: int
+    save_interval_examples: int
+    domain: str
+    model_type: str
+    encoding_dimension: int
+    intermediate_dimension: int
+    num_examples_to_track: int
+    num_test_images: int
+    learning_rate: float
+    adam_beta_1: float
+    adam_beta_2: float
 
 
 def cyclegan_config_from_json(config_path):

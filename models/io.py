@@ -75,6 +75,45 @@ def load_data(model_config):
     return data
 
 
+def load_single_domain_data(model_config):
+    data = {}
+    # Load train and test data from train image folder and make the split
+    # here on the fly.
+    data['all_image_paths'] = sorted(
+        (
+            config.STATIC_PATHS.source_images /
+            model_config.dataset_name / f'train_{model_config.domain}'
+        ).glob(ALLOWED_IMAGE_PATTERN)
+    )
+    random.seed(4242)
+    random.shuffle(data['all_image_paths'])
+    data['train_image_paths'] = \
+        data['all_image_paths'][model_config.num_test_images:]
+    data['test_image_paths'] = \
+        data['all_image_paths'][:model_config.num_test_images]
+    for tt in ['train', 'test']:
+        data[f'{tt}_image_examples'] = create_image_array(
+            random.sample(
+                data[f'{tt}_image_paths'],
+                model_config.num_examples_to_track
+            ),
+            model_config.image_shape
+        )
+        if model_config.use_data_generator and tt == 'train':
+            # We do not use a generator for the test set.
+            data[f'{tt}_batch_generator'] = SingleDomainDataGenerator(
+                data[f'{tt}_image_paths'],
+                batch_size=model_config.batch_size,
+                image_shape=model_config.image_shape
+            )
+        else:
+            data[f'{tt}_images'] = create_image_array(
+                data[f'{tt}_image_paths'],
+                model_config.image_shape
+            )
+    return data
+
+
 class BothDomainsDataGenerator(tf.keras.utils.Sequence):
     def __init__(
         self,
@@ -238,6 +277,15 @@ def save_metadata(data, result_paths_base):
 def save_losses(losses, result_paths_base):
     with (result_paths_base / 'losses_history.pickle').open('wb') as file:
         pickle.dump(losses, file)
+
+
+def save_image_tuple(images, path_name, num_channels):
+    image = np.hstack(images)
+    if num_channels == 1:
+        image = image[:, :, 0]
+    pil_image_from_normalized_array(image).save(
+        path_name, quality=75
+    )
 
 
 def load_weights_for_model(model, result_paths_saved_models):

@@ -1,5 +1,3 @@
-import csv
-import json
 import logging
 import random
 import tqdm
@@ -484,13 +482,16 @@ class CycleGAN():
                 synthetic_images = self.G_single[other].predict(real_images)
                 reconstructed_images = self.G_single[domain].predict(synthetic_images)
                 for i in range(self.config.num_examples_to_track):
-                    self.save_image_triplet(
-                        real_images[i],
-                        synthetic_images[i],
-                        reconstructed_images[i],
+                    models.io.save_image_tuple(
+                        (
+                            real_images[i],
+                            synthetic_images[i],
+                            reconstructed_images[i]
+                        ),
                         self.result_paths.__dict__[
                             f'examples_history_{train_or_test}'
-                        ][domain] / f'epoch{self.epoch:04d}_example{i}.jpg'
+                        ][domain] / f'epoch{self.epoch:04d}_example{i}.jpg',
+                        self.config.image_shape[-1]
                     )
 
     def save_temporary_example_images(self, real_images, synthetic_images):
@@ -538,14 +539,6 @@ class CycleGAN():
             'D': self.config.learning_rate_D / denominator_D,
             'G': self.config.learning_rate_G / denominator_G
         }
-
-    def save_image_triplet(self, real, synthetic, reconstructed, path_name):
-        image = np.hstack((real, synthetic, reconstructed))
-        if self.config.image_shape[-1] == 1:
-            image = image[:, :, 0]
-        models.io.pil_image_from_normalized_array(image).save(
-            path_name, quality=75
-        )
 
     def load_generator_weights(self, model_key):
         self.result_paths = config.construct_result_paths(

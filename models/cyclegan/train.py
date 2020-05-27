@@ -13,7 +13,7 @@ def get_arguments():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     parser.add_argument(
-        '--config-path',
+        '--config-path', required=True,
         help=f"JSON config path, relative to {config.STATIC_PATHS.configs}."
     )
     parser = models.add_common_parser_arguments(parser)

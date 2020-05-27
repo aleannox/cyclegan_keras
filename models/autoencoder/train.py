@@ -3,7 +3,7 @@ import logging
 
 import config
 import models
-import models.cyclegan
+import models.autoencoder
 import util
 
 
@@ -16,14 +16,6 @@ def get_arguments():
         '--config-path', required=True,
         help=f"JSON config path, relative to {config.STATIC_PATHS.configs}."
     )
-    parser.add_argument(
-        '--model-key', default=None,
-        help=(
-            f"Load model from this key relative to {config.STATIC_PATHS.results}. "
-            "If supplied, model is loaded from this key rather than trained. "
-            "The chronologically last model checkpoint is loaded."
-        )
-    )
     parser = models.add_common_parser_arguments(parser)
     return parser.parse_args()
 
@@ -33,7 +25,7 @@ if __name__ == '__main__':
     arguments = get_arguments()
     logging.info("Running with the following arguments.")
     logging.info(arguments)
-    model_config = config.cyclegan_config_from_json(arguments.config_path)
+    model_config = config.autoencoder_config_from_json(arguments.config_path)
     logging.info("Running with the following config.")
     logging.info(model_config)
     util.set_tensorflow_verbosity(arguments.verbose_tensorflow)
@@ -43,9 +35,8 @@ if __name__ == '__main__':
     )
 
     try:
-        model = models.cyclegan.CycleGAN(model_config)
-        model.load_generator_weights(arguments.model_key)
+        model = models.autoencoder.AutoEncoder(model_config)
         model.prepare_data()
-        model.generate_synthetic_images()
+        model.train()
     except KeyboardInterrupt:
-        logging.info("Aborting generation.")
+        logging.info("Aborting training.")
