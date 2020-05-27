@@ -53,10 +53,10 @@ class CycleGAN():
             normalization=self.config.normalization,
             use_patchgan_discriminator=self.config.use_patchgan_discriminator
         )
+        self.D = {}
         loss_weights_D = [0.5]
         # ^ Correct for D having twice as many interations as G due to
         # training on real and synthetic images.
-        self.D = {}
         for domain in config.DOMAINS:
             if self.config.use_multiscale_discriminator:
                 self.D[domain] = components.multi_scale_discriminator(
@@ -166,11 +166,19 @@ class CycleGAN():
             outputs=outputs,
             name='G'
         )
+        # Compile G with frozen discriminators, we do not want to change their
+        # weights in the generator training.
+        for domain in config.DOMAINS:
+            self.D[domain].trainable = False
         self.G.compile(
             optimizer=self.optimizer_G,
             loss=losses,
             loss_weights=loss_weights
         )
+        # Not necessary if the discriminators have been already compiled.
+        # (Which is the case at the time of writing.)
+        for domain in config.DOMAINS:
+            self.D[domain].trainable = True
 
     def prepare_data(self):
         # Input data.
@@ -360,10 +368,8 @@ class CycleGAN():
             if self.config.use_supervised_learning:
                 y[f'synthetic_{domain}'] = real_images[domain]
 
-        self.freeze_discriminators()
         for _ in range(self.config.generator_iterations):
             G_loss = self.G.train_on_batch(x=x, y=y, return_dict=True)
-        self.unfreeze_discriminators()
 
         return G_loss
 
@@ -380,14 +386,6 @@ class CycleGAN():
                     x=real_images[domain], y=real_images[domain]
                 )
             return G_identity_loss
-
-    def freeze_discriminators(self):
-        for domain in config.DOMAINS:
-            self.D[domain].trainable = False
-
-    def unfreeze_discriminators(self):
-        for domain in config.DOMAINS:
-            self.D[domain].trainable = True
 
     def record_losses(self, D_loss, G_loss, G_identity_loss):
         for domain in config.DOMAINS:

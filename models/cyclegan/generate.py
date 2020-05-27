@@ -33,7 +33,7 @@ if __name__ == '__main__':
     arguments = get_arguments()
     logging.info("Running with the following arguments.")
     logging.info(arguments)
-    model_config = config.model_config_from_json(arguments.config_path)
+    model_config = config.cyclegan_config_from_json(arguments.config_path)
     logging.info("Running with the following config.")
     logging.info(model_config)
     util.set_tensorflow_verbosity(arguments.verbose_tensorflow)

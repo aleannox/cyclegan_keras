@@ -87,7 +87,7 @@ def construct_result_paths(model_key=None, create_dirs=False):
 
 
 @dataclasses.dataclass
-class ModelConfig:
+class CycleGANConfig:
     dataset_name: pathlib.Path
     image_shape: tuple
     use_data_generator: bool
@@ -124,11 +124,28 @@ class ModelConfig:
     num_test_B_images: typing.Union[int, None]
 
 
-def model_config_from_json(config_path):
+@dataclasses.dataclass
+class AutoEncoderConfig:
+    dataset_name: pathlib.Path
+    image_shape: tuple
+    use_data_generator: bool
+    epochs: int
+    batch_size: int
+
+
+def cyclegan_config_from_json(config_path):
+    return model_config_from_json(config_path, data_class=CycleGANConfig)
+
+
+def autoencoder_config_from_json(config_path):
+    return model_config_from_json(config_path, data_class=AutoEncoderConfig)
+
+
+def model_config_from_json(config_path, data_class):
     with pathlib.Path(STATIC_PATHS.configs / config_path).open() as file:
         json_config = json.load(file)
     return dacite.from_dict(
-        data_class=ModelConfig,
+        data_class=data_class,
         data=json_config,
         config=dacite.Config(type_hooks=CONFIG_CONVERTERS)
     )

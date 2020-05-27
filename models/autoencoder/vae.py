@@ -28,7 +28,7 @@ def main(args):
         create_dirs=True
     )
     args.domain = 'A'
-    model_config = config.model_config_from_json(
+    model_config = config.cyclegan_config_from_json(
         'panzer_schaeferhund_autoencoder.json'
     )
     args.batch_size = model_config.batch_size
