@@ -45,20 +45,21 @@ def load_data(model_config):
                     data[f'{tt}_image_paths'][domain][
                         :model_config.__dict__[f'num_{tt}_{domain}_images']
                     ]
-            data[f'{tt}_image_examples'][domain] = create_image_array(
-                random.sample(
-                    data[f'{tt}_image_paths'][domain],
-                    model_config.num_examples_to_track
-                ),
-                model_config.image_shape
-            )
+            if data[f'{tt}_image_paths'][domain]:
+                data[f'{tt}_image_examples'][domain] = create_image_array(
+                    random.sample(
+                        data[f'{tt}_image_paths'][domain],
+                        model_config.num_examples_to_track
+                    ),
+                    model_config.image_shape
+                )
             if not model_config.use_data_generator:
                 data[f'{tt}_images'][domain] = create_image_array(
                     data[f'{tt}_image_paths'][domain],
                     model_config.image_shape
                 )
         if model_config.use_data_generator:
-            data[f'{tt}_batch_generator'] = DataGenerator(
+            data[f'{tt}_batch_generator'] = BothDomainsDataGenerator(
                 data[f'{tt}_image_paths'],
                 batch_size=model_config.batch_size,
                 image_shape=model_config.image_shape
@@ -74,7 +75,7 @@ def load_data(model_config):
     return data
 
 
-class DataGenerator(tf.keras.utils.Sequence):
+class BothDomainsDataGenerator(tf.keras.utils.Sequence):
     def __init__(
         self,
         image_paths,
@@ -110,6 +111,35 @@ class DataGenerator(tf.keras.utils.Sequence):
                 batch['image_paths'][domain], self.image_shape
             )
         return batch
+
+
+class SingleDomainDataGenerator(tf.keras.utils.Sequence):
+    def __init__(
+        self,
+        image_paths,
+        image_shape,
+        batch_size
+    ):
+        self.batch_size = batch_size
+        self.image_shape = image_shape
+        self.image_paths = image_paths
+
+    def __len__(self):
+        return compute_num_batches(
+            len(self.image_paths),
+            self.batch_size
+        )
+
+    def __getitem__(self, idx):
+        image_paths_batch = get_batch(
+            idx,
+            self.batch_size,
+            self.image_paths,
+            len(self.image_paths)
+        )
+        return create_image_array(
+            image_paths_batch, self.image_shape
+        )
 
 
 def get_batch(
@@ -153,12 +183,23 @@ def create_image_array(image_paths, image_shape):
         else:
             image = np.array(PIL.Image.open(image_path))
         if image.shape != image_shape:
-            raise ValueError(
-                f"{image_path} has the wrong shape: "
-                f"{image.shape} instead of {image_shape}."
-            )
-        image_array.append(image)
-    return normalize_array(np.array(image_array))
+            if image.shape == image_shape[:-1]:
+                # Black and white image, but we want RGB.
+                image = black_and_white_to_rgb(image)
+            else:
+                raise ValueError(
+                    f"Not able to correct wrong image shape {image.shape} "
+                    f"to target shape {image_shape}."
+                )
+        image_array.append(normalize_array(image))
+    return np.array(image_array).astype('float32')
+
+
+def black_and_white_to_rgb(bw_image_array):
+    return np.stack(
+        tuple(bw_image_array for _ in range(3)),
+        axis=-1
+    )
 
 
 def normalize_array(array):

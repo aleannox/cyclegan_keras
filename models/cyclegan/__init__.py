@@ -512,9 +512,9 @@ class CycleGAN():
         )
 
         self.save_image_triplet(
-            real_images_stacked[0],
-            synthetic_images_stacked[0],
-            reconstructed_images_stacked[0],
+            real_images_stacked,
+            synthetic_images_stacked,
+            reconstructed_images_stacked,
             self.result_paths.examples_history / 'tmp.jpg'
         )
 
