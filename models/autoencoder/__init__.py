@@ -44,6 +44,8 @@ class AutoEncoder():
                 self.config.cnn_kernel_size,
                 self.config.cnn_filters,
                 self.config.cnn_strides,
+                self.config.cnn_dilation_rate,
+                self.config.cnn_use_sampling,
                 self.config.cnn_padding
             )
             self.decoder = components.cnn_decoder(
@@ -54,6 +56,8 @@ class AutoEncoder():
                 self.config.cnn_levels,
                 self.config.cnn_kernel_size,
                 self.config.cnn_strides,
+                self.config.cnn_dilation_rate,
+                self.config.cnn_use_sampling,
                 self.config.cnn_padding
             )
 

@@ -39,20 +39,25 @@ def cnn_encoder(
     levels=1,
     kernel_size=3,
     filters=4,
-    strides=2,
+    strides=1,
+    dilation_rate=2,
+    use_sampling=True,
     padding='same'
 ):
     inputs = tf.keras.Input(shape=image_shape, name='encoder_input')
     x = inputs
     for _ in range(levels):
-        filters *= 2
         x = tf.keras.layers.Conv2D(
             filters=filters,
             kernel_size=kernel_size,
             activation='relu',
             strides=strides,
+            dilation_rate=dilation_rate,
             padding=padding
         )(x)
+        if use_sampling:
+            x = tf.keras.layers.MaxPool2D(pool_size=(2, 2))(x)
+        filters /= 2
 
     # Shape needed to build decoder model.
     # Could also be calculated manually, but this is less error prone.
@@ -72,7 +77,9 @@ def cnn_decoder(
     intermediate_dim,
     levels=1,
     kernel_size=3,
-    strides=2,
+    strides=1,
+    dilation_rate=2,
+    use_sampling=True,
     padding='same'
 ):
     latent_inputs = tf.keras.Input(shape=(encoding_dim,), name='z')
@@ -83,19 +90,25 @@ def cnn_decoder(
     x = tf.keras.layers.Reshape(last_encoder_conv_shape)(x)
     filters = last_encoder_conv_shape[-1]
     for _ in range(levels - 1):
+        filters *= 2
+        if use_sampling:
+            x = tf.keras.layers.UpSampling2D(size=(2, 2))(x)
         x = tf.keras.layers.Conv2DTranspose(
             filters=filters,
             kernel_size=kernel_size,
             activation='relu',
             strides=strides,
+            dilation_rate=dilation_rate,
             padding=padding
         )(x)
-        filters //= 2
+    if use_sampling:
+        x = tf.keras.layers.UpSampling2D(size=(2, 2))(x)
     outputs = tf.keras.layers.Conv2DTranspose(
         filters=image_shape[-1],
         kernel_size=kernel_size,
+        activation='tanh',
         strides=strides,
-        activation='sigmoid',
+        dilation_rate=dilation_rate,
         padding=padding,
         name='decoder_output'
     )(x)

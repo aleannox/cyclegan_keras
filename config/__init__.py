@@ -147,6 +147,8 @@ class AutoEncoderConfig:
     cnn_kernel_size: int
     cnn_filters: int
     cnn_strides: int
+    cnn_dilation_rate: int
+    cnn_use_sampling: bool
     cnn_padding: str
 
 
