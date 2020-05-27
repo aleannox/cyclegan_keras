@@ -143,6 +143,11 @@ class AutoEncoderConfig:
     learning_rate: float
     adam_beta_1: float
     adam_beta_2: float
+    cnn_levels: int
+    cnn_kernel_size: int
+    cnn_filters: int
+    cnn_strides: int
+    cnn_padding: str
 
 
 def cyclegan_config_from_json(config_path):

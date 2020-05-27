@@ -36,7 +36,26 @@ class AutoEncoder():
                 self.config.intermediate_dimension
             )
         else:  # CNN
-            pass
+            self.encoder, last_encoder_conv_shape = components.cnn_encoder(
+                self.config.image_shape,
+                self.config.encoding_dimension,
+                self.config.intermediate_dimension,
+                self.config.cnn_levels,
+                self.config.cnn_kernel_size,
+                self.config.cnn_filters,
+                self.config.cnn_strides,
+                self.config.cnn_padding
+            )
+            self.decoder = components.cnn_decoder(
+                self.config.image_shape,
+                self.config.encoding_dimension,
+                last_encoder_conv_shape,
+                self.config.intermediate_dimension,
+                self.config.cnn_levels,
+                self.config.cnn_kernel_size,
+                self.config.cnn_strides,
+                self.config.cnn_padding
+            )
 
         inputs = tf.keras.Input(
             shape=self.config.image_shape,

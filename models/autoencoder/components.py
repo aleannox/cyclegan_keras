@@ -32,68 +32,75 @@ def mlp_decoder(
     return decoder
 
 
-# def cnn_encoder(
-#     image_shape,
-#     encoding_dim,
-#     levels=1,
-#     kernel_size=3,
-#     filters=4,
-#     strides=2,
-#     intermediate_dim=64,
-#     padding='same'
-# ):
-#     pass
-    # inputs = tf.keras.Input(shape=image_shape, name='encoder_input')
-    # x = inputs
-    # for _ in range(levels):
-    #     filters *= 2
-    #     x = tf.keras.layers.Conv2D(
-    #         filters=filters,
-    #         kernel_size=kernel_size,
-    #         activation='relu',
-    #         strides=strides,
-    #         padding=padding
-    #     )(x)
+def cnn_encoder(
+    image_shape,
+    encoding_dim,
+    intermediate_dim,
+    levels=1,
+    kernel_size=3,
+    filters=4,
+    strides=2,
+    padding='same'
+):
+    inputs = tf.keras.Input(shape=image_shape, name='encoder_input')
+    x = inputs
+    for _ in range(levels):
+        filters *= 2
+        x = tf.keras.layers.Conv2D(
+            filters=filters,
+            kernel_size=kernel_size,
+            activation='relu',
+            strides=strides,
+            padding=padding
+        )(x)
 
-    # # shape info needed to build decoder model
-    # shape = tf.keras.backend.int_shape(x)
+    # Shape needed to build decoder model.
+    # Could also be calculated manually, but this is less error prone.
+    last_conv_shape = tf.keras.backend.int_shape(x)[1:]
 
-    # # generate latent vector Q(z|X)
-    # x = tf.keras.layers.Flatten()(x)
-    # x = tf.keras.layers.Dense(intermediate_dim, activation='relu')(x)
-    # z_mean = tf.keras.layers.Dense(encoding_dim, name='z_mean')(x)
-    # z_log_var = tf.keras.layers.Dense(encoding_dim, name='z_log_var')(x)
+    x = tf.keras.layers.Flatten()(x)
+    x = tf.keras.layers.Dense(intermediate_dim, activation='relu')(x)
+    latent_outputs = tf.keras.layers.Dense(encoding_dim, name='z')(x)
+    encoder = tf.keras.Model(inputs, latent_outputs, name='encoder')
+    return encoder, last_conv_shape
 
-# def cnn_decoder(
-#     image_shape,
-#     encoding_dim,
-#     levels=1,
-#     kernel_size=3,
-#     filters=4,
-#     strides=2,
-#     intermediate_dim=64,
-#     padding='same'
-# ):
-#     pass
-    # latent_inputs = tf.keras.Input(shape=(encoding_dim,), name='z_sampling')
-    # x = tf.keras.layers.Dense(np.prod(encoder_o)(latent_inputs)
-    # x = tf.keras.layers.Reshape((shape[1], shape[2], shape[3]))(x)
-    # for _ in range(levels):
-    #     x = tf.keras.layers.Conv2DTranspose(
-    #         filters=filters,
-    #         kernel_size=kernel_size,
-    #         activation='relu',
-    #         strides=strides,
-    #         padding=padding
-    #     )(x)
-    #     filters //= 2
-    # outputs = tf.keras.layers.Conv2DTranspose(
-    #     filters=1,
-    #     kernel_size=kernel_size,
-    #     activation='sigmoid',
-    #     padding=padding,
-    #     name='decoder_output'
-    # )(x)
+
+def cnn_decoder(
+    image_shape,
+    encoding_dim,
+    last_encoder_conv_shape,
+    intermediate_dim,
+    levels=1,
+    kernel_size=3,
+    strides=2,
+    padding='same'
+):
+    latent_inputs = tf.keras.Input(shape=(encoding_dim,), name='z')
+    x = tf.keras.layers.Dense(
+        intermediate_dim, activation='relu'
+    )(latent_inputs)
+    x = tf.keras.layers.Dense(np.prod(last_encoder_conv_shape), activation='tanh')(x)
+    x = tf.keras.layers.Reshape(last_encoder_conv_shape)(x)
+    filters = last_encoder_conv_shape[-1]
+    for _ in range(levels - 1):
+        x = tf.keras.layers.Conv2DTranspose(
+            filters=filters,
+            kernel_size=kernel_size,
+            activation='relu',
+            strides=strides,
+            padding=padding
+        )(x)
+        filters //= 2
+    outputs = tf.keras.layers.Conv2DTranspose(
+        filters=image_shape[-1],
+        kernel_size=kernel_size,
+        strides=strides,
+        activation='sigmoid',
+        padding=padding,
+        name='decoder_output'
+    )(x)
+    decoder = tf.keras.Model(latent_inputs, outputs, name='decoder')
+    return decoder
 
 
 class SaveExamplesCallback(tf.keras.callbacks.Callback):
@@ -120,6 +127,7 @@ class SaveExamplesCallback(tf.keras.callbacks.Callback):
                         real_images[i],
                         reconstructed_images[i]
                     ),
-                    self.sink_folders[train_or_test] / f'epoch{epoch:04d}_example{i}.jpg',
+                    self.sink_folders[train_or_test] /
+                    f'epoch{epoch:04d}_example{i}.jpg',
                     self.num_channels
                 )
