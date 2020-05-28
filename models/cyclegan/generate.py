@@ -20,7 +20,7 @@ def get_arguments():
         '--model-key', required=True,
         help=(
             f"Load model from this key relative to {config.STATIC_PATHS.results}. "
-            "The chronologically last model checkpoint is loaded. "
+            "The chronologically last model checkpoint is loaded."
         )
     )
     parser = models.add_common_parser_arguments(parser)
