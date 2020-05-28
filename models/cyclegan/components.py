@@ -64,6 +64,21 @@ def discriminator(
     return tf.keras.Model(inputs=input_img, outputs=x, name=name)
 
 
+def autoencoded_discriminator(
+    encoding_dim,
+    num_layers=2,
+    name=None
+):
+    latent_input = tf.keras.Input(shape=(encoding_dim,))
+    x = latent_input
+    for _ in range(num_layers):
+        x = tf.keras.layers.Dense(encoding_dim)(x)
+        x = tf.keras.activations.relu(x, alpha=0.2)  # LeakyReLU
+    x = tf.keras.layers.Dense(1)(x)
+    # No sigmoid (LSGAN) to avoid near-fp32 machine epsilon discriminator cost.
+    return tf.keras.Model(inputs=latent_input, outputs=x, name=name)
+
+
 def generator(
     image_shape,
     normalization,
@@ -109,6 +124,20 @@ def generator(
     x = tf.keras.activations.tanh(x)
     # ^ They say they use ReLU, but they don't.
     return tf.keras.Model(inputs=input_img, outputs=x, name=name)
+
+
+def autoencoded_generator(
+    encoding_dim,
+    num_layers=2,
+    name=None
+):
+    latent_input = tf.keras.Input(shape=(encoding_dim,))
+    x = latent_input
+    for _ in range(num_layers):
+        x = tf.keras.layers.Dense(encoding_dim)(x)
+        x = tf.keras.activations.relu(x, alpha=0.2)  # LeakyReLU
+    x = tf.keras.layers.Dense(encoding_dim)(x)
+    return tf.keras.Model(inputs=latent_input, outputs=x, name=name)
 
 
 def ck(x, k, stride, normalization=None):
@@ -204,6 +233,9 @@ class ImagePool():
         for image in images:
             if len(image.shape) == 3:
                 image = image[np.newaxis, :, :, :]
+            elif len(image.shape) == 1:
+                # For autoencoded images.
+                image = image[np.newaxis, :]
 
             if self.num_imgs < self.pool_size:  # fill up the image pool
                 self.num_imgs = self.num_imgs + 1
@@ -222,9 +254,11 @@ class ImagePool():
                 p = random.uniform(0, 1)
                 if p > 0.5:
                     random_id = random.randint(0, self.pool_size - 1)
-                    tmp = self.images[random_id, :, :, :]
-                    tmp = tmp[np.newaxis, :, :, :]
-                    self.images[random_id, :, :, :] = image[0, :, :, :]
+                    # tmp = self.images[random_id, :, :, :]
+                    # tmp = tmp[np.newaxis, :, :, :]
+                    # self.images[random_id, :, :, :] = image[0, :, :, :]
+                    tmp = np.expand_dims(self.images[random_id], axis=0)
+                    self.images[random_id] = image
                     if len(return_images) == 0:
                         return_images = tmp
                     else:

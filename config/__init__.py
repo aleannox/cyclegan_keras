@@ -93,6 +93,9 @@ class CycleGANConfig:
     dataset_name: pathlib.Path
     image_shape: tuple
     use_data_generator: bool
+    use_autoencoder: bool
+    autoencoder_A: typing.Union[pathlib.Path, None]
+    autoencoder_B: typing.Union[pathlib.Path, None]
     epochs: int
     batch_size: int
     save_interval_examples: int
@@ -110,6 +113,8 @@ class CycleGANConfig:
     adam_beta_2: float
     num_examples_to_track: int
     synthetic_pool_size: int
+    autoencoded_discriminator_num_layers: int
+    autoencoded_generator_num_layers: int
     use_linear_lr_decay: bool
     linear_lr_decay_epoch_start: int
     use_identity_learning: bool

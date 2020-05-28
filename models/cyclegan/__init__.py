@@ -1,4 +1,5 @@
 import logging
+import pathlib
 import random
 import tqdm
 
@@ -7,6 +8,7 @@ import numpy as np
 import tensorflow as tf
 
 import config
+import models.autoencoder
 import models.cyclegan.components as components
 import models.io
 import util
@@ -21,6 +23,7 @@ class CycleGAN():
         tf.random.set_seed(4242)
 
         self.prepare_optimizers()
+        self.maybe_prepare_autoencoders()
         self.prepare_discriminators()
         self.prepare_single_generators()
         self.prepare_full_model()
@@ -45,18 +48,50 @@ class CycleGAN():
             self.config.adam_beta_2
         )
 
+    def maybe_prepare_autoencoders(self):
+        if self.config.use_autoencoder:
+            self.autoencoders = {}
+            for domain in config.DOMAINS:
+                # TODO: Improve dirty path resolution.
+                model_config = config.autoencoder_config_from_json(
+                    pathlib.Path('../results') /
+                    self.config.__dict__[f'autoencoder_{domain}'] /
+                    'meta_data.json'
+                )
+                autoencoder = models.autoencoder.AutoEncoder(model_config)
+                autoencoder.model.load_weights(str(
+                    pathlib.Path('data/results') /
+                    self.config.__dict__[f'autoencoder_{domain}'] /
+                    'saved_models' / 'best_weights.hdf5'
+                ))
+                self.autoencoders[domain] = autoencoder
+                self.autoencoders['encoding_dimension'] = \
+                    model_config.encoding_dimension
+        else:
+            self.autoencoders = None
+
     def prepare_discriminators(self):
-        discriminator_args = dict(
-            image_shape=self.config.image_shape,
-            normalization=self.config.normalization,
-            use_patchgan_discriminator=self.config.use_patchgan_discriminator
-        )
+        if self.config.use_autoencoder:
+            discriminator_args = dict(
+                encoding_dim=self.autoencoders['encoding_dimension'],
+                num_layers=self.config.autoencoded_discriminator_num_layers
+            )
+        else:
+            discriminator_args = dict(
+                image_shape=self.config.image_shape,
+                normalization=self.config.normalization,
+                use_patchgan_discriminator=self.config.use_patchgan_discriminator
+            )
         self.D = {}
         loss_weights_D = [0.5]
         # ^ Correct for D having twice as many interations as G due to
         # training on real and synthetic images.
         for domain in config.DOMAINS:
-            if self.config.use_multiscale_discriminator:
+            if self.config.use_autoencoder:
+                self.D[domain] = components.autoencoded_discriminator(
+                    **discriminator_args, name=f'D_{domain}'
+                )
+            elif self.config.use_multiscale_discriminator:
                 self.D[domain] = components.multi_scale_discriminator(
                     **discriminator_args, name=f'D_{domain}'
                 )
@@ -72,15 +107,23 @@ class CycleGAN():
             )
 
     def prepare_single_generators(self):
-        generator_args = dict(
-            image_shape=self.config.image_shape,
-            normalization=self.config.normalization,
-            use_multiscale_discriminator=self.config.use_multiscale_discriminator,
-            use_resize_convolution=self.config.use_resize_convolution
-        )
+        if self.config.use_autoencoder:
+            generator_args = dict(
+                encoding_dim=self.autoencoders['encoding_dimension'],
+                num_layers=self.config.autoencoded_generator_num_layers
+            )
+            generator_builder = components.autoencoded_generator
+        else:
+            generator_args = dict(
+                image_shape=self.config.image_shape,
+                normalization=self.config.normalization,
+                use_multiscale_discriminator=self.config.use_multiscale_discriminator,
+                use_resize_convolution=self.config.use_resize_convolution
+            )
+            generator_builder = components.generator
         self.G_single = {}
         for domain, other in config.DOMAIN_PAIRS:
-            self.G_single[domain] = components.generator(
+            self.G_single[domain] = generator_builder(
                 **generator_args, name=f'G_{other}2{domain}'
             )
             if self.config.use_identity_learning:
@@ -92,7 +135,11 @@ class CycleGAN():
         inputs = []
         real = {
             domain: tf.keras.Input(
-                shape=self.config.image_shape, name=f'real_{domain}'
+                shape=(
+                    self.config.image_shape if not self.config.use_autoencoder
+                    else (self.autoencoders['encoding_dimension'],)
+                ),
+                name=f'real_{domain}'
             )
             for domain in config.DOMAINS
         }
@@ -302,7 +349,7 @@ class CycleGAN():
             self.run_batch_training_iteration(batch_index, batch)
 
     def run_batch_training_iteration(self, batch_index, batch):
-        real_images = batch['images']
+        real_images = self.maybe_autoencode_images(batch['images'])
         D_loss = self.run_batch_training_iteration_discriminator(
             batch_index, real_images
         )
@@ -328,13 +375,16 @@ class CycleGAN():
         D_loss = {}
         for _ in range(self.config.discriminator_iterations):
             for domain in config.DOMAINS:
+                # Cut the labels, necessary in in the last batch.
+                # TODO: replace with `np.like`.
+                actual_batch_size = real_images[domain].shape[0]
                 D_loss_real = self.D[domain].train_on_batch(
                     x=real_images[domain],
-                    y=self.data['positive_discriminator_labels']
+                    y=self.data['positive_discriminator_labels'][:actual_batch_size]
                 )
                 D_loss_synthetic = self.D[domain].train_on_batch(
                     x=synthetic_images[domain],
-                    y=self.data['negative_discriminator_labels']
+                    y=self.data['negative_discriminator_labels'][:actual_batch_size]
                 )
                 if self.config.use_multiscale_discriminator:
                     D_loss[domain] = sum(D_loss_real) + sum(D_loss_synthetic)
@@ -342,6 +392,7 @@ class CycleGAN():
                     D_loss[domain] = D_loss_real + D_loss_synthetic
 
         if batch_index % self.config.save_interval_temporary_examples == 0:
+            # TODO: Save the real real image and not the autoencoded one.
             self.save_temporary_example_images(
                 real_images,
                 synthetic_images
@@ -354,15 +405,18 @@ class CycleGAN():
         y = {}
 
         for domain in config.DOMAINS:
+            # Cut the labels, necessary in in the last batch.
+            # TODO: replace with `np.like`.
+            actual_batch_size = real_images[domain].shape[0]
             x[f'real_{domain}'] = real_images[domain]
             y[f'reconstructed_{domain}'] = real_images[domain]
             if self.config.use_multiscale_discriminator:
                 for i in range(2):
                     y[f'D_{domain}_guess_synthetic_{i}'] = \
-                        self.data['positive_discriminator_labels'][i]
+                        self.data['positive_discriminator_labels'][i][:actual_batch_size]
             else:
                 y[f'D_{domain}_guess_synthetic'] = \
-                    self.data['positive_discriminator_labels']
+                    self.data['positive_discriminator_labels'][:actual_batch_size]
             if self.config.use_supervised_learning:
                 y[f'synthetic_{domain}'] = real_images[domain]
 
@@ -479,8 +533,22 @@ class CycleGAN():
             for domain, other in config.DOMAIN_PAIRS:
                 real_images = \
                     self.data[f'{train_or_test}_image_examples'][domain]
-                synthetic_images = self.G_single[other].predict(real_images)
-                reconstructed_images = self.G_single[domain].predict(synthetic_images)
+                if self.config.use_autoencoder:
+                    # TODO: Abstract this.
+                    encoded_synthetic_images = self.G_single[other].predict(
+                        self.autoencoders[domain].encoder(
+                            real_images
+                        )
+                    )
+                    synthetic_images = self.autoencoders[domain].decoder.predict(
+                        encoded_synthetic_images
+                    )
+                    reconstructed_images = self.autoencoders[domain].decoder.predict(
+                        self.G_single[domain].predict(encoded_synthetic_images)
+                    )
+                else:
+                    synthetic_images = self.G_single[other].predict(real_images)
+                    reconstructed_images = self.G_single[domain].predict(synthetic_images)
                 for i in range(self.config.num_examples_to_track):
                     models.io.save_image_tuple(
                         (
@@ -501,21 +569,51 @@ class CycleGAN():
                 self.G_single[domain].predict(synthetic_images[other])
 
         real_images_stacked = np.vstack(
-            tuple(images[0] for images in real_images.values())
+            tuple(
+                images[0] for images in
+                self.maybe_autodecode_images(real_images).values()
+            )
         )
         synthetic_images_stacked = np.vstack(
-            tuple(images[0] for images in synthetic_images.values())[::-1]
+            tuple(
+                images[0] for images in
+                self.maybe_autodecode_images(synthetic_images).values()
+            )[::-1]
         )
         reconstructed_images_stacked = np.vstack(
-            tuple(images[0] for images in reconstructed_images.values())
+            tuple(
+                images[0] for images in
+                self.maybe_autodecode_images(reconstructed_images).values()
+            )
         )
 
-        self.save_image_triplet(
-            real_images_stacked,
-            synthetic_images_stacked,
-            reconstructed_images_stacked,
-            self.result_paths.examples_history / 'tmp.jpg'
+        models.io.save_image_tuple(
+            (
+                real_images_stacked,
+                synthetic_images_stacked,
+                reconstructed_images_stacked
+            ),
+            self.result_paths.examples_history / 'tmp.jpg',
+            self.config.image_shape[-1]
         )
+
+    def maybe_autoencode_images(self, images):
+        if self.config.use_autoencoder:
+            return {
+                domain: self.autoencoders[domain].encoder.predict(images[domain])
+                for domain in config.DOMAINS
+            }
+        else:
+            return images
+
+    def maybe_autodecode_images(self, images):
+        if self.config.use_autoencoder:
+            return {
+                domain: self.autoencoders[domain].decoder.predict(images[domain])
+                for domain in config.DOMAINS
+            }
+        else:
+            return images
 
     def calculate_learning_rate_decrements(self):
         updates_per_epoch_D = (
