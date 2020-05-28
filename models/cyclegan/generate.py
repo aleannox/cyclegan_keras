@@ -17,11 +17,10 @@ def get_arguments():
         help=f"JSON config path, relative to {config.STATIC_PATHS.configs}."
     )
     parser.add_argument(
-        '--model-key', default=None,
+        '--model-key', required=True,
         help=(
             f"Load model from this key relative to {config.STATIC_PATHS.results}. "
-            "If supplied, model is loaded from this key rather than trained. "
-            "The chronologically last model checkpoint is loaded."
+            "The chronologically last model checkpoint is loaded. "
         )
     )
     parser = models.add_common_parser_arguments(parser)

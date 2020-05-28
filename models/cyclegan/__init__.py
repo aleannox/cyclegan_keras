@@ -540,7 +540,7 @@ class CycleGAN():
                             real_images
                         )
                     )
-                    synthetic_images = self.autoencoders[domain].decoder.predict(
+                    synthetic_images = self.autoencoders[other].decoder.predict(
                         encoded_synthetic_images
                     )
                     reconstructed_images = self.autoencoders[domain].decoder.predict(
