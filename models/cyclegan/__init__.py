@@ -651,8 +651,18 @@ class CycleGAN():
 
         def generate_synthetic_images_batch(batch):
             for domain, other in config.DOMAIN_PAIRS:
-                synthetic_images = \
-                    self.G_single[domain].predict(batch['images'][other])
+                if self.config.use_autoencoder:
+                    synthetic_images = \
+                        self.autoencoders[domain].decoder.predict(
+                            self.G_single[domain].predict(
+                                self.autoencoders[other].encoder.predict(
+                                    batch['images'][other]
+                                )
+                            )
+                        )
+                else:
+                    synthetic_images = \
+                        self.G_single[domain].predict(batch['images'][other])
                 for i in range(len(synthetic_images)):
                     save_image(
                         synthetic_images[i],

@@ -6,6 +6,7 @@ import numpy as np
 import scipy.signal
 
 import config
+import models.io
 
 
 FILTER_FS = 1000
@@ -47,12 +48,17 @@ def plot_losses(
     ).open('rb') as file:
         losses = pickle.load(file)
 
-    num_points_min = min_epoch * meta_data['num_train_images_max']
+    num_batches_per_epoch = models.io.compute_num_batches(
+        meta_data['num_train_images_max'],
+        meta_data['batch_size']
+    )
+
+    num_points_min = min_epoch * num_batches_per_epoch
     num_points_max = len(losses['G'])
     if max_epoch:
         num_points_max = min(
             num_points_max,
-            max_epoch * meta_data['num_train_images_max']
+            max_epoch * num_batches_per_epoch
         )
 
     # Calculate interesting things to plot
@@ -84,7 +90,7 @@ def plot_losses(
                 print(plot_data[key])
                 raise
 
-    x = np.array(points) / meta_data['num_train_images_max'] + min_epoch
+    x = np.array(points) / num_batches_per_epoch + min_epoch
 
     def plot_kind(kind, ax):
         for domain, color in DOMAIN_COLORS.items():

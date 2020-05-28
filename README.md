@@ -6,11 +6,15 @@
 Fork of https://github.com/simontomaskarlsson/CycleGAN-Keras.  
 Changes after forking:
 
-- Migrated from `keras` and `keras_contrib` to TensorFlow 2 (`tensorflow.keras` and `tensorflow_addons`).
+- Migrated from `keras` and `keras_contrib` to TensorFlow 2
+  (`tensorflow.keras` and `tensorflow_addons`).
 - Changed config, IO, control, module structure.
+- Added the possibility to first train an autoencoder and then
+  train CycleGAN on the latent space in order to have the chance to learn a more
+  abstract concept transfer rather than pure style transfer.
 
 TODO:
-- Add autoencoder.
+- Add autoencoder README.
 - Add resume training.
 - Add TensorBoard callbacks.
 
