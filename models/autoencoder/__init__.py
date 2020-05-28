@@ -35,7 +35,7 @@ class AutoEncoder():
                 self.config.encoding_dimension,
                 self.config.intermediate_dimension
             )
-        else:  # CNN
+        elif self.config.model_type == 'cnn':
             self.encoder, last_encoder_conv_shape = components.cnn_encoder(
                 self.config.image_shape,
                 self.config.encoding_dimension,
@@ -60,6 +60,33 @@ class AutoEncoder():
                 self.config.cnn_use_sampling,
                 self.config.cnn_padding
             )
+        elif self.config.model_type == 'adain':
+            self.encoder, last_encoder_conv_shape = components.adain_encoder(
+                self.config.image_shape,
+                self.config.encoding_dimension,
+                self.config.intermediate_dimension,
+                self.config.cnn_levels,
+                self.config.cnn_kernel_size,
+                self.config.cnn_filters,
+                self.config.cnn_strides,
+                self.config.cnn_dilation_rate,
+                self.config.cnn_use_sampling,
+                self.config.cnn_padding
+            )
+            self.decoder = components.adain_decoder(
+                self.config.image_shape,
+                self.config.encoding_dimension,
+                self.config.intermediate_dimension,
+                last_encoder_conv_shape,
+                self.config.cnn_levels,
+                self.config.cnn_kernel_size,
+                self.config.cnn_strides,
+                self.config.cnn_dilation_rate,
+                self.config.cnn_use_sampling,
+                self.config.cnn_padding
+            )
+        else:
+            raise NotImplementedError(self.config.model_type)
 
         inputs = tf.keras.Input(
             shape=self.config.image_shape,

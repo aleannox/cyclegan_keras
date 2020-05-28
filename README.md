@@ -15,6 +15,7 @@ Changes after forking:
 
 TODO:
 - Add autoencoder README.
+- Add model architecture loading for image generation.
 - Add resume training.
 - Add TensorBoard callbacks.
 
@@ -155,7 +156,7 @@ to generate images which will be stored in `data/results/<MODEL_KEY>/generated_s
 
 The image generation needs a config in the same format as the model training.  
 You can use the same config as the one used in training or a different one (as long  
-as the image shape is the same).  
+as the model architecture is the same).  
 
 The generation script generates mapped images for all images in  
 `data/source_images/<DATASET_NAME>/{test_A, test_B}`.  
