@@ -52,6 +52,8 @@ class ResultPaths:
         = dataclasses.field(init=False)
     generated_synthetic_images: typing.Dict[str, pathlib.Path] \
         = dataclasses.field(init=False)
+    encoded_images: typing.Dict[str, pathlib.Path] \
+        = dataclasses.field(init=False)
     tensorboard: pathlib.Path = dataclasses.field(init=False)
     def __post_init__(self):
         self.saved_models = self.base / 'saved_models'
@@ -66,6 +68,10 @@ class ResultPaths:
         }
         self.generated_synthetic_images = {
             domain: self.base / 'generated_synthetic_images' / domain
+            for domain in DOMAINS
+        }
+        self.encoded_images = {
+            domain: self.base / 'encoded_images' / domain
             for domain in DOMAINS
         }
         self.tensorboard = self.base / 'tensorboard'
@@ -151,6 +157,7 @@ class AutoEncoderConfig:
     cnn_levels: int
     cnn_kernel_size: int
     cnn_filters: int
+    cnn_filter_growth: float
     cnn_strides: int
     cnn_dilation_rate: int
     cnn_use_sampling: bool

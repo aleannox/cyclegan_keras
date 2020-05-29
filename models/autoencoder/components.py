@@ -1,4 +1,3 @@
-import functools
 import math
 
 import numpy as np
@@ -45,6 +44,7 @@ def cnn_encoder(
     levels=1,
     kernel_size=3,
     filters=4,
+    filter_growth=1,
     strides=1,
     dilation_rate=2,
     use_sampling=True,
@@ -52,27 +52,33 @@ def cnn_encoder(
 ):
     inputs = tf.keras.Input(shape=image_shape, name='encoder_input')
     x = inputs
+    # Dirty trick to avoid odd numbers on the way.
+    factor = 2 ** levels
+    if image_shape[0] % factor != 0 or image_shape[1] % factor != 0:
+        extend_h = (math.ceil(image_shape[0] / factor) * factor - image_shape[0]) // 2
+        extend_w = (math.ceil(image_shape[1] / factor) * factor - image_shape[1]) // 2
+        x = util.ReflectionPadding2D((extend_w, extend_h))(x)
     for _ in range(levels):
         x = tf.keras.layers.Conv2D(
             filters=filters,
             kernel_size=kernel_size,
-            activation='relu',
+            activation=leaky_relu,
             strides=strides,
             dilation_rate=dilation_rate,
             padding=padding
         )(x)
         if use_sampling:
             x = tf.keras.layers.MaxPool2D(pool_size=(2, 2))(x)
-        filters /= 2
+        filters = int(filters * filter_growth)
 
     # Shape needed to build decoder model.
     # Could also be calculated manually, but this is less error prone.
     last_conv_shape = tf.keras.backend.int_shape(x)[1:]
 
     x = tf.keras.layers.Flatten()(x)
-    x = tf.keras.layers.Dense(intermediate_dim, activation='relu')(x)
+    x = tf.keras.layers.Dense(intermediate_dim, activation=leaky_relu)(x)
     latent_outputs = \
-        tf.keras.layers.Dense(encoding_dim, name='z', activation='relu')(x)
+        tf.keras.layers.Dense(encoding_dim, name='z', activation=leaky_relu)(x)
     encoder = tf.keras.Model(inputs, latent_outputs, name='encoder')
     return encoder, last_conv_shape
 
@@ -84,6 +90,7 @@ def cnn_decoder(
     intermediate_dim,
     levels=1,
     kernel_size=3,
+    filter_growth=1,
     strides=1,
     dilation_rate=2,
     use_sampling=True,
@@ -91,19 +98,19 @@ def cnn_decoder(
 ):
     latent_inputs = tf.keras.Input(shape=(encoding_dim,), name='z')
     x = tf.keras.layers.Dense(
-        intermediate_dim, activation='relu'
+        intermediate_dim, activation=leaky_relu
     )(latent_inputs)
-    x = tf.keras.layers.Dense(np.prod(last_encoder_conv_shape), activation='relu')(x)
+    x = tf.keras.layers.Dense(np.prod(last_encoder_conv_shape), activation=leaky_relu)(x)
     x = tf.keras.layers.Reshape(last_encoder_conv_shape)(x)
     filters = last_encoder_conv_shape[-1]
     for _ in range(levels - 1):
-        filters *= 2
+        filters = int(filters / filter_growth)
         if use_sampling:
             x = tf.keras.layers.UpSampling2D(size=(2, 2))(x)
         x = tf.keras.layers.Conv2DTranspose(
             filters=filters,
             kernel_size=kernel_size,
-            activation='relu',
+            activation=leaky_relu,
             strides=strides,
             dilation_rate=dilation_rate,
             padding=padding
@@ -120,6 +127,17 @@ def cnn_decoder(
         name='decoder_output'
     )(x)
     # ^ Recall that we are feeding in images normalized to [-1, 1].
+    # Dirty trick to avoid odd numbers on the way. Invert padding in encoder.
+    factor = 2 ** levels
+    if image_shape[0] % factor != 0 or image_shape[1] % factor != 0:
+        extend_h = (math.ceil(image_shape[0] / factor) * factor - image_shape[0]) // 2
+        extend_w = (math.ceil(image_shape[1] / factor) * factor - image_shape[1]) // 2
+        outputs = outputs[
+            :,
+            extend_h:image_shape[0] + extend_h,
+            extend_w:image_shape[1] + extend_w,
+            :
+        ]
     decoder = tf.keras.Model(latent_inputs, outputs, name='decoder')
     return decoder
 
@@ -225,7 +243,7 @@ def adain_decoder(
         name='decoder_output'
     )(x)
     # ^ Recall that we are feeding in images normalized to [-1, 1].
-    # Dirty trick to avoid odd numbers on the way.
+    # Dirty trick to avoid odd numbers on the way. Invert padding in encoder.
     factor = 2 ** levels
     if image_shape[0] % factor != 0 or image_shape[1] % factor != 0:
         extend_h = (math.ceil(image_shape[0] / factor) * factor - image_shape[0]) // 2

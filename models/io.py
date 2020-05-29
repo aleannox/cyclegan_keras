@@ -79,12 +79,22 @@ def load_single_domain_data(model_config):
     data = {}
     # Load train and test data from train image folder and make the split
     # here on the fly.
-    data['all_image_paths'] = sorted(
-        (
-            config.STATIC_PATHS.source_images /
-            model_config.dataset_name / f'train_{model_config.domain}'
-        ).glob(ALLOWED_IMAGE_PATTERN)
-    )
+    if model_config.domain == 'both':
+        data['all_image_paths'] = []
+        for domain in config.DOMAINS:
+            data['all_image_paths'] += sorted(
+                (
+                    config.STATIC_PATHS.source_images /
+                    model_config.dataset_name / f'train_{domain}'
+                ).glob(ALLOWED_IMAGE_PATTERN)
+            )
+    else:
+        data['all_image_paths'] = sorted(
+            (
+                config.STATIC_PATHS.source_images /
+                model_config.dataset_name / f'train_{model_config.domain}'
+            ).glob(ALLOWED_IMAGE_PATTERN)
+        )
     random.seed(4242)
     random.shuffle(data['all_image_paths'])
     data['train_image_paths'] = \

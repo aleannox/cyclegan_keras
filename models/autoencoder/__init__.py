@@ -1,6 +1,7 @@
 import logging
 import random
 
+import pandas as pd
 import numpy as np
 import tensorflow as tf
 
@@ -43,6 +44,7 @@ class AutoEncoder():
                 self.config.cnn_levels,
                 self.config.cnn_kernel_size,
                 self.config.cnn_filters,
+                self.config.cnn_filter_growth,
                 self.config.cnn_strides,
                 self.config.cnn_dilation_rate,
                 self.config.cnn_use_sampling,
@@ -55,6 +57,7 @@ class AutoEncoder():
                 self.config.intermediate_dimension,
                 self.config.cnn_levels,
                 self.config.cnn_kernel_size,
+                self.config.cnn_filter_growth,
                 self.config.cnn_strides,
                 self.config.cnn_dilation_rate,
                 self.config.cnn_use_sampling,
@@ -156,6 +159,14 @@ class AutoEncoder():
         self.model.save_weights(
             str(self.result_paths.saved_models / 'final_weights.hdf5')
         )
+        # Resave best weights, for some reason the model checkpoint callback
+        # saves much larger files.
+        self.model.load_weights(
+            str(self.result_paths.saved_models / 'best_weights.hdf5')
+        )
+        self.model.save_weights(
+            str(self.result_paths.saved_models / 'best_weights.hdf5')
+        )
 
     def prepare_callbacks(self):
         tensorboard_callback = tf.keras.callbacks.TensorBoard(
@@ -173,6 +184,11 @@ class AutoEncoder():
             save_best_only=True, mode='min'
         )
 
+        # Dirty mod to save results if trained on both domains at once.
+        sink_domain = (
+                config.DOMAINS[0] if self.config.domain == 'both'
+                else self.config.domain
+            )
         examples_callback = components.SaveExamplesCallback(
             save_interval=self.config.save_interval_examples,
             real_examples={
@@ -182,7 +198,7 @@ class AutoEncoder():
             sink_folders={
                 train_or_test: self.result_paths.__dict__[
                     f'examples_history_{train_or_test}'
-                ][self.config.domain]
+                ][sink_domain]
                 for train_or_test in ['train', 'test']
             },
             num_channels=self.config.image_shape[-1]
@@ -193,3 +209,41 @@ class AutoEncoder():
             checkpoint_callback,
             examples_callback
         ]
+
+    def load_weights(self, model_key):
+        self.result_paths = config.construct_result_paths(
+            model_key=model_key
+        )
+        self.model.load_weights(
+            str(self.result_paths.saved_models / 'best_weights.hdf5')
+        )
+
+    def encode(self):
+        image_paths = []
+        zs = []
+        for tt in ['train', 'test']:
+            if self.config.use_data_generator and tt == 'train':
+                predict_args = {'x': self.data[f'{tt}_batch_generator']}
+            else:
+                predict_args = {
+                    'x': self.data[f'{tt}_images'],
+                    'batch_size': self.config.batch_size
+                }
+            image_paths += self.data[f'{tt}_image_paths']
+            logging.info(f"Encoding {tt} images.")
+            zs += list(self.encoder.predict(**predict_args))
+        to_save = pd.DataFrame(
+            {
+                'path': image_paths,
+                'z': zs
+            }
+        )
+        to_save['path'] = to_save['path'].astype(str)
+        sink_domain = (
+            config.DOMAINS[0] if self.config.domain == 'both'
+            else self.config.domain
+        )
+        to_save.to_parquet(
+            self.result_paths.encoded_images[sink_domain] / 'encoded.parquet',
+            index=False
+        )

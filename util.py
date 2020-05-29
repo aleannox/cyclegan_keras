@@ -106,3 +106,9 @@ def plot_model_svg(model, **kwargs):
             **kwargs
         ).create(prog='dot', format='svg')
     )
+
+
+def pandas_series_to_numpy(series):
+    """Fix series with multidimensional arrays as values which are
+    not proper numpy arrays because Pandas mixes list and numpy.array."""
+    return np.array(list(map(list, series.values)))
