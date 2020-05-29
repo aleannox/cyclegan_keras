@@ -82,7 +82,10 @@ def plot_losses(
             try:
                 plot_data[f'{key}_raw'] = plot_data[key][points]
                 plot_data[f'{key}_filtered'] = butter_lowpass_filter(
-                    plot_data[key], FILTER_CUTOFF, FILTER_FS, FILTER_ORDER
+                    plot_data[key],
+                    FILTER_CUTOFF,
+                    FILTER_FS // 200 * num_batches_per_epoch,
+                    FILTER_ORDER
                 )[points]
             except IndexError:
                 print(key)
@@ -90,7 +93,7 @@ def plot_losses(
                 print(plot_data[key])
                 raise
 
-    x = np.array(points) / num_batches_per_epoch + min_epoch
+    x = np.array(points) / num_batches_per_epoch
 
     def plot_kind(kind, ax):
         for domain, color in DOMAIN_COLORS.items():
