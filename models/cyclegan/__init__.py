@@ -568,7 +568,7 @@ class CycleGAN():
             reconstructed_images[domain] = \
                 self.G_single[domain].predict(synthetic_images[other])
 
-        actual_batch_size = len(real_images.values()[0])
+        actual_batch_size = len(list(real_images.values())[0])
         random_id = random.randint(0, actual_batch_size - 1)
 
         real_images_stacked = np.vstack(

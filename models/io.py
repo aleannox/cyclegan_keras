@@ -62,7 +62,8 @@ def load_data(model_config):
             data[f'{tt}_batch_generator'] = BothDomainsDataGenerator(
                 data[f'{tt}_image_paths'],
                 batch_size=model_config.batch_size,
-                image_shape=model_config.image_shape
+                image_shape=model_config.image_shape,
+                shuffle=tt == 'train'
             )
         data[f'num_{tt}_images_max'] = max(
             len(data[f'{tt}_image_paths'][domain])
@@ -114,7 +115,8 @@ def load_single_domain_data(model_config):
             data[f'{tt}_batch_generator'] = SingleDomainDataGenerator(
                 data[f'{tt}_image_paths'],
                 batch_size=model_config.batch_size,
-                image_shape=model_config.image_shape
+                image_shape=model_config.image_shape,
+                shuffle=True
             )
         else:
             data[f'{tt}_images'] = create_image_array(
@@ -129,11 +131,13 @@ class BothDomainsDataGenerator(tf.keras.utils.Sequence):
         self,
         image_paths,
         image_shape,
-        batch_size
+        batch_size,
+        shuffle
     ):
         self.batch_size = batch_size
         self.image_shape = image_shape
         self.image_paths = image_paths
+        self.shuffle = shuffle
 
     def __len__(self):
         return compute_num_batches(
@@ -161,17 +165,23 @@ class BothDomainsDataGenerator(tf.keras.utils.Sequence):
             )
         return batch
 
+    def on_epoch_end(self):
+        if self.shuffle:
+            random.shuffle(self.image_paths)
+
 
 class SingleDomainDataGenerator(tf.keras.utils.Sequence):
     def __init__(
         self,
         image_paths,
         image_shape,
-        batch_size
+        batch_size,
+        shuffle
     ):
         self.batch_size = batch_size
         self.image_shape = image_shape
         self.image_paths = image_paths
+        self.shuffle = shuffle
 
     def __len__(self):
         return compute_num_batches(
@@ -189,6 +199,10 @@ class SingleDomainDataGenerator(tf.keras.utils.Sequence):
         return create_image_array(
             image_paths_batch, self.image_shape
         )
+
+    def on_epoch_end(self):
+        if self.shuffle:
+            random.shuffle(self.image_paths)
 
 
 def get_batch(
