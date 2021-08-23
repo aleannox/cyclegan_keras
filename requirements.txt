@@ -1,6 +1,6 @@
 cmake==3.17.2
 dacite==1.5.0
-jupyterlab==2.1.2
+jupyterlab==2.2.10
 matplotlib==3.2.1
 MulticoreTSNE==0.1
 numpy==1.18.4
